@@ -1,0 +1,4 @@
+{
+    "type": "commonjs",
+    "seed": "tsx prisma/seed.ts"
+}

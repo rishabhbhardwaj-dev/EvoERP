@@ -1,0 +1,284 @@
+// EvoERP — Prisma schema
+// Rule: every tenant-owned model includes `schoolId` (multi-tenancy).
+// Indian fiscal year: April to March.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────── Enums ────────────────────────────
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+  PARENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+/// Indian school category (General / SC / ST / OBC).
+enum StudentCategory {
+  GENERAL
+  SC
+  ST
+  OBC
+}
+
+enum StudentStatus {
+  ACTIVE
+  ALUMNI
+  TRANSFERRED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  WITHDRAWN
+}
+
+// ──────────────────────────── Models ───────────────────────────
+
+model School {
+  id        String     @id @default(cuid())
+  name      String
+  code      String     @unique
+  address   String?
+  phone     String?
+  email     String?
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  users       User[]
+  students    Student[]
+  teachers    Teacher[]
+  classes     Class[]
+  subjects    Subject[]
+  enrollments Enrollment[]
+  auditLogs   AuditLog[]
+
+  @@index([status])
+}
+
+model User {
+  id           String     @id @default(cuid())
+  schoolId     String
+  name         String
+  email        String
+  passwordHash String
+  role         Role
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  school           School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacherProfile   Teacher?
+  studentProfile   Student?
+  children         Student[]       @relation("ParentUser")
+  accounts         Account[]
+  sessions         Session[]
+
+  @@unique([schoolId, email])
+  @@index([schoolId])
+  @@index([schoolId, role])
+  @@index([schoolId, status])
+}
+
+model Student {
+  id              String          @id @default(cuid())
+  schoolId        String
+  /// Admission number is unique per school.
+  admissionNumber String
+  userId          String?         @unique
+  /// Parent (User with role PARENT) linked to this student.
+  parentUserId    String?
+  firstName       String
+  lastName        String
+  dateOfBirth     DateTime?       @db.Date
+  gender          Gender?
+  category        StudentCategory @default(GENERAL)
+  /// RTE 25% reservation candidate (Right to Education Act).
+  rteCandidate    Boolean         @default(false)
+  status          StudentStatus   @default(ACTIVE)
+  address         String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  parent      User?        @relation("ParentUser", fields: [parentUserId], references: [id], onDelete: SetNull)
+  enrollments Enrollment[]
+
+  @@unique([schoolId, admissionNumber])
+  @@index([schoolId])
+  @@index([schoolId, status])
+  @@index([parentUserId])
+}
+
+model Teacher {
+  id           String   @id @default(cuid())
+  schoolId     String
+  userId       String   @unique
+  employeeCode String
+  department   String?
+  qualification String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, employeeCode])
+  @@index([schoolId])
+}
+
+model Class {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  /// Academic year (Indian, Apr–Mar), e.g. "2025-2026".
+  academicYear String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sections    Section[]
+  enrollments Enrollment[]
+
+  @@unique([schoolId, name, academicYear])
+  @@index([schoolId])
+  @@index([schoolId, academicYear])
+}
+
+model Section {
+  id       String @id @default(cuid())
+  schoolId String
+  classId  String
+  name     String
+
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  class       Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
+
+  @@unique([classId, name])
+  @@index([schoolId])
+  @@index([classId])
+}
+
+model Subject {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  code      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, code])
+  @@index([schoolId])
+}
+
+model Enrollment {
+  id           String           @id @default(cuid())
+  schoolId     String
+  studentId    String
+  classId      String
+  sectionId    String
+  academicYear String
+  status       EnrollmentStatus @default(ACTIVE)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  school  School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, academicYear])
+  @@index([schoolId])
+  @@index([schoolId, academicYear])
+  @@index([classId])
+  @@index([sectionId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  schoolId   String
+  userId     String
+  action     String
+  entityType String
+  entityId   String
+  oldValues  Json?
+  newValues  Json?
+  createdAt  DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, createdAt])
+  @@index([schoolId, entityType, entityId])
+  @@index([userId])
+}
+
+// ─────────────────── NextAuth (Auth.js) adapter tables ───────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  schoolId          String
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([schoolId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  schoolId     String
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([userId])
+}
+
+model VerificationToken {
+  id         String   @id @default(cuid())
+  schoolId   String
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@index([schoolId])
+}
