@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-
+import { Prisma } from "@prisma/client";
 export interface AuditEntry {
   userId: string;
   action: string;
@@ -26,8 +26,8 @@ export async function logAudit(
         action: entry.action,
         entityType: entry.entityType,
         entityId: entry.entityId,
-        oldValues: entry.oldValues ?? undefined,
-        newValues: entry.newValues ?? undefined,
+        oldValues: (entry.oldValues as Prisma.InputJsonValue) ?? undefined,
+        newValues: (entry.newValues as Prisma.InputJsonValue) ?? undefined,
       },
     });
   } catch (error) {

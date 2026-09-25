@@ -1,24 +1,15 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
-import { loginSchema } from "@/lib/validations/auth";
+import { prisma } from "./prisma";
+import { authConfig } from "./auth.config";
+import { loginSchema } from "./validations/auth";
 
-/**
- * NextAuth v5 — credentials provider + Prisma adapter.
- * JWT session strategy (required for credentials); schoolId and role
- * are embedded in the JWT so tenant middleware can read them per-request.
- */
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
+  ...authConfig,
   session: { strategy: "jwt" },
-  pages: {
-    signIn: "/login",
-  },
   providers: [
     Credentials({
-      name: "credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
@@ -28,18 +19,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!parsed.success) return null;
 
         const { email, password } = parsed.data;
-        const user = await prisma.user.findFirst({
-          where: { email: email.toLowerCase(), status: "ACTIVE" },
-        });
-        if (!user) return null;
 
-        const valid = await bcrypt.compare(password, user.passwordHash);
-        if (!valid) return null;
+        const user = await prisma.user.findFirst({
+          where: { email },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            passwordHash: true,
+            role: true,
+            schoolId: true,
+          },
+        });
+
+        if (!user || !user.passwordHash) return null;
+
+        const isValid = await bcrypt.compare(password, user.passwordHash);
+        if (!isValid) return null;
 
         return {
           id: user.id,
-          name: user.name,
           email: user.email,
+          name: user.name,
           role: user.role,
           schoolId: user.schoolId,
         };
@@ -47,20 +48,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
+    ...authConfig.callbacks,
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
-        token.schoolId = user.schoolId;
+        token.id = user.id!;
         token.role = user.role;
+        token.schoolId = user.schoolId;
       }
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.id as string;
-        session.user.schoolId = token.schoolId as string;
-        session.user.role = token.role as "ADMIN" | "TEACHER" | "STUDENT" | "PARENT";
-      }
+      session.user.id = token.id as string;
+      session.user.role = token.role as string;
+      session.user.schoolId = token.schoolId as string;
       return session;
     },
   },

@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import type { Role } from "@prisma/client";
 
@@ -28,7 +29,7 @@ export async function getTenantContext(): Promise<TenantContext | null> {
   return {
     userId: user.id,
     schoolId: user.schoolId,
-    role: user.role,
+    role: user.role as Role,
     name: user.name ?? "",
     email: user.email ?? "",
   };
@@ -36,18 +37,18 @@ export async function getTenantContext(): Promise<TenantContext | null> {
 
 /**
  * Tenant middleware helper: extracts schoolId from the authenticated session.
- * Throws when called outside an authenticated request.
+ * Redirects to login when unauthenticated.
  */
 export async function getSchoolId(): Promise<string> {
   const ctx = await getTenantContext();
-  if (!ctx) throw new TenantError("Unauthenticated: cannot resolve schoolId");
+  if (!ctx) redirect("/login");
   return ctx.schoolId;
 }
 
-/** Like getTenantContext() but throws instead of returning null. */
+/** Like getTenantContext() but redirects to login instead of returning null. */
 export async function requireTenant(): Promise<TenantContext> {
   const ctx = await getTenantContext();
-  if (!ctx) throw new TenantError();
+  if (!ctx) redirect("/login");
   return ctx;
 }
 

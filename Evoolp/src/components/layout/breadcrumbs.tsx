@@ -1,7 +1,3 @@
-"use client";
-
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -11,35 +7,29 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 
-export function Breadcrumbs() {
-  const pathname = usePathname();
-  const segments = pathname.split("/").filter(Boolean);
+interface BreadcrumbsProps {
+    items?: Array<{ label: string; href?: string }>;
+}
 
+export function Breadcrumbs({ items = [] }: BreadcrumbsProps) {
   return (
-    <Breadcrumb className="px-6 py-3">
+    <Breadcrumb>
       <BreadcrumbList>
         <BreadcrumbItem>
-          <BreadcrumbLink asChild>
-            <Link href="/dashboard">Home</Link>
-          </BreadcrumbLink>
+          <BreadcrumbLink href="/dashboard">Home</BreadcrumbLink>
         </BreadcrumbItem>
-        {segments.slice(1).map((segment, index, arr) => {
-          const href = `/dashboard/${segments.slice(1, index + 2).join("/")}`;
-          const label = segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, " ");
-          const isLast = index === arr.length - 1;
-          return (
-            <BreadcrumbItem key={href}>
-              <BreadcrumbSeparator />
-              {isLast ? (
-                <BreadcrumbPage>{label}</BreadcrumbPage>
-              ) : (
-                <BreadcrumbLink asChild>
-                  <Link href={href}>{label}</Link>
-                </BreadcrumbLink>
-              )}
-            </BreadcrumbItem>
-          );
-        })}
+        {items.map((item, index) => (
+          <BreadcrumbSeparator key={`sep-${index}`} />
+        ))}
+        {items.map((item, index) => (
+          <BreadcrumbItem key={index}>
+            {index === items.length - 1 ? (
+              <BreadcrumbPage>{item.label}</BreadcrumbPage>
+            ) : (
+              <BreadcrumbLink href={item.href ?? "#"}>{item.label}</BreadcrumbLink>
+            )}
+          </BreadcrumbItem>
+        ))}
       </BreadcrumbList>
     </Breadcrumb>
   );
