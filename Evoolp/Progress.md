@@ -1,18 +1,53 @@
 # EvoERP — Progress
 
-## Current Phase: Phase 1 (Foundation) — Complete; Ready for Phase 2 (Academic Core)
+## Current Phase: Phase 2 (Academic Core) — In Progress (Module 1: Classes & Sections Complete)
 
 ## Git & Environment Status
 - **Workspace:** `D:\Dekstop\EvoERP`
 - **Current Branch:** `evoerp-foundation-fixes` (Tracking: `origin/evoerp-foundation-fixes`)
-- **Current HEAD Commit:** `b354981` (`fix(auth): restore DashboardPage to resolve login redirect loop`)
-- **Working Tree:** Clean
+- **Current HEAD Commit:** `406b539` (`docs: reconcile Progress.md with verified Phase 1 completion`)
+- **Working Tree:** Untracked Phase 2 Classes & Sections module files present (ready for review)
 - **Database:** PostgreSQL 16 container (`evoolp-db-1`) active in WSL2 on port 5432
 - **Runtime:** Node.js v22/v24, Next.js 15.5.25 App Router, Prisma 6.19.3, NextAuth v5 beta
 
 ---
 
 ## Done
+
+### Session 2026-09-26 (Phase 2 - Module 1: Classes & Sections Management)
+- [x] Defined Zod validation schemas (`Evoolp/src/lib/validations/class.ts`) for `createClassSchema` and `createSectionSchema` with Indian academic year regex validation (`YYYY-YYYY`).
+- [x] Implemented tenant-isolated server actions with strict server-side RBAC and active-enrollment deletion protection:
+  - `createClass` and `deleteClass` in `Evoolp/src/lib/actions/classes.ts`.
+  - `createSection` and `deleteSection` in `Evoolp/src/lib/actions/sections.ts`.
+  - Enforced `requireTenant()` and `schoolId` scoping on all queries and mutations.
+  - Enforced `ADMIN` role for mutations; unauthorized roles receive structured rejection.
+  - Blocked deletion if active student enrollments exist on the target class or section.
+  - Handled multi-section creation convenience (e.g. `A, B, C`).
+- [x] Implemented UI components with Base UI / shadcn design system:
+  - `ClassTable` (`Evoolp/src/components/classes/class-table.tsx`): Real-time search, academic-year filter dropdown (defaults to "All Academic Years" so seeded 2025-2026 data is never hidden), section badges, enrollment counts, and inline deletion triggers.
+  - `CreateClassDialog` (`Evoolp/src/components/classes/create-class-dialog.tsx`): Modal form using React Hook Form + Zod resolver with validation error feedback and server error alerts.
+  - `CreateSectionDialog` (`Evoolp/src/components/classes/create-section-dialog.tsx`): Class-contextual section creation dialog.
+  - `CreateSectionStandaloneDialog` (`Evoolp/src/components/classes/create-section-standalone-dialog.tsx`): Standalone section creation dialog with class picker.
+  - `SectionsTable` (`Evoolp/src/components/classes/sections-table.tsx`): Flat section roster with class parent badges, class filtering, student enrollment counts, and deletion controls.
+- [x] Implemented Next.js App Router server pages:
+  - `/dashboard/classes` (`Evoolp/src/app/(dashboard)/dashboard/classes/page.tsx`): Displays summary metrics (Total Classes, Total Sections, Enrolled Students) and the interactive class roster.
+  - `/dashboard/sections` (`Evoolp/src/app/(dashboard)/dashboard/sections/page.tsx`): Displays section-level metrics and the complete section directory.
+- [x] Verified zero TypeScript compilation errors (`tsc --noEmit` passes with 0 errors).
+- [x] Verified production build (`npm run build` succeeds; generated routes `/dashboard/classes` and `/dashboard/sections`).
+- [x] Verified database constraints and backend business logic via automated test script:
+  - Seeded Class 6 and Section A verified.
+  - Duplicate class and duplicate section prevention verified.
+  - Enrollment deletion guards verified (blocks deletion when enrollments > 0).
+- [x] Executed full automated browser runtime smoke test with browser subagent:
+  - Admin login with `admin@demo.evoerp.in` / `Password123!`.
+  - `/dashboard/classes` loads with HTTP 200 (no 404), displaying seeded Class 6 (2025-2026, Section A).
+  - Admin created `Class 7` (Academic Year `2025-2026`, initial sections `A, B`).
+  - Metric cards updated dynamically (Total Classes: 2, Total Sections: 3).
+  - Duplicate class creation blocked with user-facing error message: `"A class named 'Class 7' already exists for academic year 2025-2026."`
+  - `/dashboard/sections` loads with HTTP 200 (no 404).
+  - Admin added Section `C` under `Class 7`. Total sections updated to 4.
+  - Class filtering on `/dashboard/sections` tested and verified.
+  - Teacher login (`teacher@demo.evoerp.in`) tested: confirmed strict read-only access (all `Add Class`, `Add Section`, and `Delete` controls hidden).
 
 ### Session 2026-09-26 (Foundation Fixes & Runtime Validation)
 - [x] Identified root cause of the login redirect loop (`(dashboard)/dashboard/page.tsx` was inadvertently holding an unconditional `redirect("/login")`).
@@ -71,14 +106,15 @@
 - **Role-Based Access Control:** Role assignment (`ADMIN`, `TEACHER`, `STUDENT`, `PARENT`) with role-tailored sidebar menus.
 - **Tenant Context Resolution:** Server-side `requireTenant()` resolving user context and school metadata securely.
 - **UI Shell:** Responsive layout with header (user profile, school name, sign-out), sidebar navigation, breadcrumbs, and dashboard cards (Tenant ID, Role, Indian Fiscal Year).
+- **Classes Management (`/dashboard/classes`):** Multi-tenant class listing, academic-year filtering, name search, metrics, class creation with initial sections, duplicate blocking, and active-enrollment deletion protection.
+- **Sections Management (`/dashboard/sections`):** Section roster grouped/filtered by class, standalone and contextual section creation, duplicate prevention, and teacher read-only view.
 
 ---
 
 ## What is NOT Implemented Yet (Phase 2+ Scope)
 - **Academic Sub-routes (Currently 404):**
-  - `/dashboard/students` — Student Directory & Profile Management.
+  - `/dashboard/students` — Student Directory & Profile Management (Module 2).
   - `/dashboard/teachers` — Teacher Directory & Staff Profiles.
-  - `/dashboard/classes` & `/dashboard/sections` — Class and Section Management.
   - `/dashboard/subjects` — Subject Catalog.
   - `/dashboard/attendance` & `/dashboard/my-attendance` — Daily Attendance Workflow.
   - `/dashboard/exams` & `/dashboard/my-grades` — CBSE Exams, Marks Entry & Report Cards.
@@ -88,13 +124,14 @@
 ---
 
 ## Known Issues
-- *(None currently blocking)*. The login redirect loop is completely resolved.
+- *(None currently blocking)*.
 
 ---
 
-## Next Up: Phase 2 — Academic Core
-According to `Project_Brief.md` and `docs/roadmap.md` (Week 3 — Academic Core), Phase 1 is complete.
-The recommended next implementation targets:
-1. **Academic Setup (Classes & Sections)** or **Student Management (Students Module)**:
-   - Provide listing, creation, and detail views for Classes/Sections or Students with Indian-specific fields (`admissionNumber`, `category`, `rteCandidate`).
-   - Implement server actions or API routes strictly enforcing `schoolId` multi-tenancy and role checks.
+## Next Up: Phase 2 — Module 2: Students Management
+According to `Project_Brief.md` and `docs/roadmap.md` (Week 3 — Academic Core), now that Classes & Sections are functional and providing parent containers:
+1. **Student Management (`/dashboard/students`):**
+   - Provide student directory, student enrollment, search, class/section filtering.
+   - Enforce Indian-specific fields (`admissionNumber` unique per school, `category` General/SC/ST/OBC, `rteCandidate` 25% RTE reservation).
+   - Implement server actions (`createStudent`, `updateStudent`, `deleteStudent`) enforcing `schoolId` multi-tenancy and audit logging.
+
