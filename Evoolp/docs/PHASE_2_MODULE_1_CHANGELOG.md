@@ -1,17 +1,39 @@
-# EvoERP — Phase 2 Module 1 Change Log
-## Classes & Sections Management
+# EvoERP — Implementation & Change Log
 
 ---
 
-### 1. Project State
+## Purpose of This Document
 
-* **Project:** EvoERP (Multi-Tenant School ERP for Indian Schools)
-* **Current Phase:** Phase 2 — Academic Core
+* **`Progress.md`:** Serves as the single source of truth for the **current project state** (where we are now, what is complete, what is currently in progress, what remains, and the immediate development target).
+* **This Document (`docs/PHASE_2_MODULE_1_CHANGELOG.md`):** Serves as the **consolidated historical implementation record** across all project phases and modules. It documents what was built, why architectural decisions were made, files created/modified, database and dependency impacts, issues encountered and resolved, and verification test results.
+
+---
+
+## Phase 1 — Foundation
+
+### 1. Overview & Objectives
+Phase 1 established the multi-tenant SaaS foundation, security boundary, database schemas, authentication, and core application shell for EvoERP.
+
+### 2. Implementation Summary
+* **Multi-Tenant Architecture:** PostgreSQL 16 database running in a Docker container (`evoolp-db-1`) on WSL2. Multi-tenancy is enforced via a mandatory foreign key `schoolId` indexed across all tenant-scoped tables.
+* **Database ORM & Migrations:** Prisma 6.19.3. Initial migration `20260923112539_init` created models: `School`, `User`, `Role`, `Class`, `Section`, `Subject`, `Student`, `Enrollment`, `Teacher`, `Attendance`, `Exam`, `Grade`, `FeeStructure`, `FeePayment`, `AuditLog`.
+* **Database Seeding (`prisma/seed.ts`):** Seeded demo school `DEMO001` ("Delhi Public Academy"), demo users with hashed passwords (`admin@demo.evoerp.in`, `teacher@demo.evoerp.in`, `student@demo.evoerp.in`, `parent@demo.evoerp.in`), academic year `2025-2026`, `Class 6`, `Section A`, subject `Mathematics`, and initial student enrollment.
+* **Authentication & Session:** Implemented credentials authentication via NextAuth v5 beta (`next-auth@5.0.0-beta.32`) with JWT session strategy, bcrypt password verification, and edge-compatible middleware route protection (`src/middleware.ts`).
+* **Tenant Context Resolution (`src/lib/tenant.ts`):** Implemented server-side `requireTenant()` utility that derives `schoolId`, `userId`, `role`, and school metadata directly from the decrypted JWT session. Also provides `getFiscalYear()` computing the Indian financial year (`Apr–Mar`).
+* **UI Shell & Navigation (`src/app/(dashboard)/layout.tsx`):** Built a responsive layout with header (school identity, user profile, logout), sidebar navigation tailored to active user role (`ADMIN`, `TEACHER`, `STUDENT`, `PARENT`), breadcrumbs, and dashboard greeting.
+* **Critical Bug Fix (Commit `b354981`):** Resolved an infinite login redirect loop where `src/app/(dashboard)/dashboard/page.tsx` was unintentionally holding an unconditional `redirect("/login")`. Surgically restored `DashboardPage` with user greeting, role badge, tenant ID, and Indian fiscal year display.
+
+---
+
+## Phase 2 — Academic Core
+
+### Module 1 — Classes & Sections
+
+#### 1. Project State
 * **Module:** Module 1: Classes & Sections Management
 * **Workspace:** `D:\Dekstop\EvoERP`
 * **Git Branch:** `evoerp-foundation-fixes`
 * **HEAD Commit:** `537080a` (`feat(academic): implement Phase 2 Classes & Sections management`)
-* **Previous Commit:** `406b539` (`docs: reconcile Progress.md with verified Phase 1 completion`)
 * **Date:** 2026-09-26
 * **Runtime & Environment:**
   * **Framework:** Next.js 15.5.25 (App Router, Server Actions, React 19.1.0)
@@ -21,10 +43,7 @@
   * **Authentication:** NextAuth v5 beta (`next-auth@5.0.0-beta.32`) with JWT session strategy
   * **UI & Styling:** Tailwind CSS 4, Base UI (`@base-ui/react`), Lucide React icons, Sonner toast
 
----
-
-### 2. Purpose of This Module
-
+#### 2. Purpose of This Module
 In school administration and within the EvoERP database architecture (`prisma/schema.prisma`), academic structures form a strict hierarchical dependency:
 
 $$\text{School} \longrightarrow \text{Class (Standard/Grade)} \longrightarrow \text{Section (Division)} \longrightarrow \text{Enrollment} \longleftarrow \text{Student}$$
@@ -36,10 +55,7 @@ Every enrolled student is associated with an active `Enrollment` record, which s
 
 Therefore, implementing **Classes & Sections** as **Module 1 of Phase 2 (Academic Core)** creates the prerequisite structural containers that subsequent modules (**Students**, **Teachers**, **Subjects**, **Attendance**, and **Exams**) directly depend upon.
 
----
-
-### 3. Files Created
-
+#### 3. Files Created
 The following 10 files were created to implement the complete Classes and Sections module:
 
 | File Path | File Type | Purpose | Main Functionality | Why It Was Needed |
@@ -55,27 +71,18 @@ The following 10 files were created to implement the complete Classes and Sectio
 | `src/components/classes/create-section-standalone-dialog.tsx` | React Client Component | Standalone Section Modal | Modal dialog with class picker dropdown for adding sections from `/dashboard/sections`. | Enables section creation from the flat sections directory view. |
 | `src/components/classes/sections-table.tsx` | React Client Component | Section Roster Table | Interactive table for sections with search, class filtering dropdown, and enrollment counts. | Provides administrators and teachers with a filterable directory of all school sections. |
 
----
+#### 4. Files Modified
+* `Evoolp/Progress.md`: Updated to reflect Classes & Sections completion and roadmap alignment.
 
-### 4. Files Modified
+#### 5. File-by-File Technical Explanation
 
-| File Path | Modification Summary | Reason for Modification |
-| :--- | :--- | :--- |
-| `Evoolp/Progress.md` | Updated current phase status to Phase 2 Module 1 complete, recorded session accomplishments and verification test results, added Classes and Sections to current working features, removed them from not-implemented routes, and aligned roadmap to Module 2 (Students). | Maintains the project's persistent progress log and single source of truth for repository state. |
-
-*Verification:* No application source code, configuration files, authentication handlers, or database schemas outside of the above list were modified.
-
----
-
-### 5. File-by-File Technical Explanation
-
-#### 1. `src/lib/validations/class.ts`
+##### 1. `src/lib/validations/class.ts`
 * **What was added:** `createClassSchema` with `name` (1–50 chars), `academicYear` (regex `/^\d{4}-\d{4}$/`), and optional `initialSections`; `createSectionSchema` with `classId` and `name` (1–20 chars); inferred types `CreateClassInput` and `CreateSectionInput`.
 * **Why it was added:** Centralizes validation rules to guarantee that inputs are sanitized and conform to Indian school standards.
 * **How it works:** Uses Zod to parse string inputs. Client forms use `@hookform/resolvers/zod` to validate in real time, and server actions use `.safeParse()` before executing database transactions.
 * **Interactions:** Consumed by `classes.ts` and `sections.ts` (server actions), and `create-class-dialog.tsx`, `create-section-dialog.tsx`, `create-section-standalone-dialog.tsx` (UI dialogs).
 
-#### 2. `src/lib/actions/classes.ts`
+##### 2. `src/lib/actions/classes.ts`
 * **What was added:** `createClass(input)` and `deleteClass(classId)` server actions returning typed `ActionResult<T>`.
 * **Why it was added:** Executes business logic for classes securely on the server.
 * **How it works:**
@@ -89,7 +96,7 @@ The following 10 files were created to implement the complete Classes and Sectio
   8. Triggers `revalidatePath("/dashboard/classes")` and `revalidatePath("/dashboard/sections")`.
 * **Interactions:** Calls `prisma.class`, `requireTenant()`, and is invoked by `create-class-dialog.tsx` and `class-table.tsx`.
 
-#### 3. `src/lib/actions/sections.ts`
+##### 3. `src/lib/actions/sections.ts`
 * **What was added:** `createSection(input)` and `deleteSection(sectionId)` server actions returning typed `ActionResult<T>`.
 * **Why it was added:** Executes business logic for individual sections.
 * **How it works:**
@@ -101,54 +108,49 @@ The following 10 files were created to implement the complete Classes and Sectio
   6. Revalidates paths.
 * **Interactions:** Calls `prisma.section`, `requireTenant()`, and is invoked by `create-section-dialog.tsx`, `create-section-standalone-dialog.tsx`, and `sections-table.tsx`.
 
-#### 4. `src/app/(dashboard)/dashboard/classes/page.tsx`
+##### 4. `src/app/(dashboard)/dashboard/classes/page.tsx`
 * **What was added:** Server page component rendering the `/dashboard/classes` route.
 * **Why it was added:** Replaces the 404 stub with the classes management dashboard.
 * **How it works:** Server-rendered on demand (`ƒ Dynamic`). Calls `requireTenant()`, fetches classes scoped to `schoolId` with sections and enrollment counts, extracts academic years for filtering, computes summary metrics, and renders header cards and `<ClassTable>`.
 * **Interactions:** Imports `requireTenant` and `getFiscalYear` from `@/lib/tenant`, queries `prisma.class`, and renders `ClassTable` and `CreateClassDialog`.
 
-#### 5. `src/app/(dashboard)/dashboard/sections/page.tsx`
+##### 5. `src/app/(dashboard)/dashboard/sections/page.tsx`
 * **What was added:** Server page component rendering the `/dashboard/sections` route.
 * **Why it was added:** Replaces the 404 stub with the flat sections directory.
 * **How it works:** Server-rendered on demand. Fetches sections with parent class metadata and enrollment counts, queries available classes for section creation, calculates metrics, and renders `<SectionsTable>`.
 * **Interactions:** Queries `prisma.section` and `prisma.class`, renders `SectionsTable` and `CreateSectionStandaloneDialog`.
 
-#### 6. `src/components/classes/class-table.tsx`
+##### 6. `src/components/classes/class-table.tsx`
 * **What was added:** Client component rendering the classes roster.
 * **Why it was added:** Gives users interactive controls to search, filter by academic year, inspect sections, and trigger actions.
 * **How it works:** Maintains client state for search term and academic year filter. The academic year filter defaults to `"ALL"` to ensure seeded `2025-2026` demo data is immediately visible. Non-admin users (`TEACHER`) see a read-only table without action triggers. Admins can delete classes (with confirmation dialog and pending spinner) or add sections inline via a `+` badge trigger.
 * **Interactions:** Consumes `deleteClass` and `deleteSection` server actions, renders `CreateSectionDialog`.
 
-#### 7. `src/components/classes/create-class-dialog.tsx`
+##### 7. `src/components/classes/create-class-dialog.tsx`
 * **What was added:** Client modal dialog for creating a class with initial sections.
 * **Why it was added:** Streamlines adding standards to the school without leaving `/dashboard/classes`.
 * **How it works:** Uses Base UI `Dialog` and React Hook Form with Zod validation. On submit, invokes `createClass`. If duplicate error occurs, displays an alert banner. On success, resets form and closes modal.
 * **Interactions:** Calls `createClass` server action, validated by `createClassSchema`.
 
-#### 8. `src/components/classes/create-section-dialog.tsx`
+##### 8. `src/components/classes/create-section-dialog.tsx`
 * **What was added:** Row-level contextual modal dialog for creating a section.
 * **Why it was added:** Allows administrators to click `+` on any class row (e.g. `Class 7`) to immediately add Section `B` or `C`.
 * **How it works:** Scoped to the row's `classId`, renders input for section name, dispatches `createSection`.
 * **Interactions:** Calls `createSection` server action.
 
-#### 9. `src/components/classes/create-section-standalone-dialog.tsx`
+##### 9. `src/components/classes/create-section-standalone-dialog.tsx`
 * **What was added:** Standalone modal dialog with class dropdown selector.
 * **Why it was added:** Allows section creation directly from the `/dashboard/sections` page.
 * **How it works:** Provides a class selection `<select>` menu alongside the section name input; disabled if no classes exist.
 * **Interactions:** Calls `createSection` server action.
 
-#### 10. `src/components/classes/sections-table.tsx`
+##### 10. `src/components/classes/sections-table.tsx`
 * **What was added:** Client component rendering all school sections in a table.
 * **Why it was added:** Enables searching across all sections, filtering by parent class, and inspecting enrollment numbers.
 * **How it works:** Filters rows by search term or parent class. Hides delete triggers for teachers. Disables delete triggers if active student enrollments exist.
 * **Interactions:** Calls `deleteSection` server action.
 
----
-
-### 6. Backend / Server-Side Architecture
-
-EvoERP does **not** use a detached Express/NestJS backend. Instead, it utilizes **Next.js 15 App Router architecture** where the server-side tier is executed natively through Server Components and Next.js Server Actions (`"use server"`):
-
+#### 6. Backend / Server-Side Architecture
 1. **Server Actions as Direct Backend Endpoints:**
    * `createClass` and `deleteClass` in `src/lib/actions/classes.ts`.
    * `createSection` and `deleteSection` in `src/lib/actions/sections.ts`.
@@ -170,10 +172,7 @@ EvoERP does **not** use a detached Express/NestJS backend. Instead, it utilizes 
 6. **Automatic Cache Revalidation:**
    * Actions invoke `revalidatePath("/dashboard/classes")` and `revalidatePath("/dashboard/sections")` to purge cached server component trees and immediately reflect mutations.
 
----
-
-### 7. Frontend Architecture
-
+#### 7. Frontend Architecture
 1. **Routes Implemented:**
    * `/dashboard/classes` — Primary Class and Section hierarchy overview.
    * `/dashboard/sections` — Primary Section directory and roster list.
@@ -194,10 +193,7 @@ EvoERP does **not** use a detached Express/NestJS backend. Instead, it utilizes 
    * Backend errors (e.g., duplicate class warning) rendered in accessible alert boxes.
    * Pending states handled via `useTransition()` and `isSubmitting` with spinning indicators (`Loader2`).
 
----
-
-### 8. Database Impact
-
+#### 8. Database Impact
 * **Prisma Schema (`prisma/schema.prisma`):** **UNCHANGED.** No schema adjustments were needed.
 * **Migrations (`prisma/migrations/`):** **UNCHANGED.** No new migrations generated.
 * **Seed Data (`prisma/seed.ts`):** **UNCHANGED.** Existing seed data preserved (`DEMO001`, `Class 6`, `Section A`, demo enrollment).
@@ -211,10 +207,7 @@ EvoERP does **not** use a detached Express/NestJS backend. Instead, it utilizes 
   * `@@unique([classId, name])` on `Section`.
   * `@@index([schoolId])` on both models for high-performance multi-tenant querying.
 
----
-
-### 9. Dependency Impact
-
+#### 9. Dependency Impact
 * **`package.json`:** **UNCHANGED.**
 * **`package-lock.json`:** **UNCHANGED.**
 * **New Packages Installed:** **0.**
@@ -226,10 +219,7 @@ EvoERP does **not** use a detached Express/NestJS backend. Instead, it utilizes 
   * `lucide-react` (`^1.47.0`) — Icons (`GraduationCap`, `Layers`, `Users`, `Trash2`, `PlusCircle`).
   * `@prisma/client` (`^6.19.3`) — Database client singleton.
 
----
-
-### 10. Security & Multi-Tenancy
-
+#### 10. Security & Multi-Tenancy
 1. **Tenant Isolation:**
    * Every query and mutation binds `schoolId: ctx.schoolId`.
    * Cross-tenant data leakage is architecturally impossible because `ctx.schoolId` is derived from the server session, never from client-provided query parameters or request bodies.
@@ -240,10 +230,7 @@ EvoERP does **not** use a detached Express/NestJS backend. Instead, it utilizes 
 4. **Integrity Protection:**
    * Foreign key cascading is prevented from deleting classes with active student records.
 
----
-
-### 11. Testing & Verification
-
+#### 11. Testing & Verification
 All tests were performed against the actual PostgreSQL 16 container (`evoolp-db-1`) in WSL2:
 
 | Test ID | Test Category | Method / Tool | Result | Verified Details |
@@ -257,10 +244,7 @@ All tests were performed against the actual PostgreSQL 16 container (`evoolp-db-
 | **TEST-07** | Section Management | Automated Browser Subagent | **PASS** | Admin opened `Add Section` modal, selected `Class 7`, created Section `C`. Verified Section `C` listed under `Class 7`. Class filter dropdown tested and verified. |
 | **TEST-08** | Teacher Read-Only RBAC | Automated Browser Subagent | **PASS** | Logged in as `teacher@demo.evoerp.in`. Navigated to `/dashboard/classes` and `/dashboard/sections`. Confirmed all `Add Class`, `Add Section`, and `Delete` controls were completely omitted from DOM. |
 
----
-
-### 12. Git History
-
+#### 12. Git History
 * **Previous Commit:** `406b539` (`docs: reconcile Progress.md with verified Phase 1 completion`)
 * **Implementation Commit:** `537080a` (`feat(academic): implement Phase 2 Classes & Sections management`)
 * **Branch:** `evoerp-foundation-fixes`
@@ -270,64 +254,14 @@ All tests were performed against the actual PostgreSQL 16 container (`evoolp-db-
   * 1 modified file (`Progress.md`).
   * Pushed to `origin/evoerp-foundation-fixes` on 2026-09-26.
 
----
-
-### 13. Current Working Features in EvoERP
-
-With Phase 1 and Phase 2 Module 1 complete, the following features are fully operational:
-1. **Multi-Tenant Foundation:** PostgreSQL database with multi-tenant indexing, schema migrations, and demo school seed data.
-2. **Authentication & Session Persistence:** Credentials login with bcrypt verification, NextAuth v5 JWT session tokens, and route protection via middleware.
-3. **Role-Based Access Control:** `ADMIN`, `TEACHER`, `STUDENT`, `PARENT` role assignment with tailored sidebar navigation.
-4. **Tenant Context Resolution:** Server-side `requireTenant()` resolving tenant ID, school metadata, and Indian fiscal year (`Apr–Mar`).
-5. **Dashboard Shell:** Responsive header with user profile and logout, breadcrumbs, sidebar, and summary cards.
-6. **Classes Management (`/dashboard/classes`):** Class catalog, academic-year filtering, name search, metric cards, class creation with initial sections, duplicate blocking, and active-enrollment deletion protection.
-7. **Sections Management (`/dashboard/sections`):** Section directory grouped and filtered by class, standalone and contextual section creation, duplicate prevention, and role-based read-only views for teachers.
-
----
-
-### 14. Not Yet Implemented (Phase 2+ Scope)
-
-The following academic sub-routes remain stubs (404) pending subsequent Phase 2 implementation:
-* `/dashboard/students` — Student Directory & Profile Management (Module 2).
-* `/dashboard/teachers` — Teacher Directory & Staff Profiles (Module 3).
-* `/dashboard/subjects` — Subject Catalog (Module 4).
-* `/dashboard/attendance` & `/dashboard/my-attendance` — Daily Attendance Workflow (Module 5).
-* `/dashboard/exams` & `/dashboard/my-grades` — CBSE Exams, Marks Entry & Report Cards (Module 6 & 7).
-* `/dashboard/my-fees` — Fee Management (Phase 3).
-* `/dashboard/notices`, `/dashboard/users`, `/dashboard/reports`, `/dashboard/audit`, `/dashboard/settings`.
-
----
-
-### 15. Next Development Target
-
-#### Phase 2 — Module 2: Students Management (`/dashboard/students`)
-
-* **Why Students is Next:** Now that parent classes and section divisions exist in the database and can be created via UI, students can be registered and assigned to active `Enrollment` records linked to a specific `classId` and `sectionId`.
-* **Planned Features:**
-  * Student directory with search by name, admission number, or roll number.
-  * Filter by Class and Section.
-  * Indian-specific student fields:
-    * `admissionNumber` (enforced unique per school).
-    * `category` (`General`, `SC`, `ST`, `OBC`).
-    * `rteCandidate` (Right to Education 25% quota flag).
-    * Parent / guardian contact details and date of birth.
-  * Server actions: `createStudent`, `updateStudent`, `deleteStudent` (with audit logging).
-  * Enrollment creation linking student to Class and Section for the current academic year.
-
----
-
-### 16. Important Lessons & Architectural Decisions
-
+#### 13. Important Lessons & Architectural Decisions
 1. **No Database Schema Changes Needed:** The initial Phase 1 Prisma schema (`Class` and `Section` models) was properly architected with composite unique constraints and tenant foreign keys, requiring zero schema alterations or migrations.
 2. **Next.js Server Actions as Native Backend:** Rather than adding an external Express backend, Next.js Server Actions provided type-safe, authenticated, tenant-isolated backend endpoints with direct ORM access and automated cache revalidation.
 3. **Discoverability of Seeded Data:** Setting the default academic year filter to `"ALL"` was critical to ensure demo records (`Class 6` in `2025-2026`) were immediately visible without user friction.
 4. **Active Enrollment Deletion Guards:** Blocking deletions when `_count.enrollments > 0` preserves student academic history and prevents relational database constraint violations.
 5. **Preservation of Foundation:** All Phase 1 authentication, middleware, and layout files remained 100% untouched throughout this module's implementation.
 
----
-
-### 17. Change Summary
-
+#### 14. Change Summary
 | File | Change | Purpose | Status |
 | :--- | :--- | :--- | :--- |
 | `src/lib/validations/class.ts` | Created | Zod validation schemas for class and section mutation inputs | **Committed (`537080a`)** |
@@ -340,5 +274,212 @@ The following academic sub-routes remain stubs (404) pending subsequent Phase 2 
 | `src/components/classes/create-section-dialog.tsx` | Created | Contextual modal for adding sections to a class row | **Committed (`537080a`)** |
 | `src/components/classes/create-section-standalone-dialog.tsx` | Created | Standalone modal for adding sections with class picker | **Committed (`537080a`)** |
 | `src/components/classes/sections-table.tsx` | Created | Interactive sections directory table with filtering | **Committed (`537080a`)** |
-| `Evoolp/Progress.md` | Modified | Updated progress log and Phase 2 roadmap alignment | **Committed (`537080a`)** |
-| `Evoolp/docs/PHASE_2_MODULE_1_CHANGELOG.md` | Created | Permanent technical changelog document for Module 1 | **Created (Untracked)** |
+
+---
+
+### Module 2 — Students
+
+#### Stage 1 — Student Directory & Admission
+
+##### 1. Overview & Purpose
+In school administration and within the EvoERP domain model, student management forms the foundational core of daily school operations. A student cannot exist in isolation; they must belong to a school tenant and have an active academic placement:
+$$\text{Student} \longleftrightarrow \text{Enrollment} \longrightarrow (\text{Class}, \text{Section})$$
+
+Stage 1 implemented the core capabilities for Student Management:
+1. Primary route `/dashboard/students` (resolving the previous 404 stub).
+2. Comprehensive student directory table with live search and multi-filtering.
+3. Student Admission modal dialog supporting Indian demographics (Category, RTE 25% Quota).
+4. Atomic `Student + Enrollment` creation in a single database transaction.
+5. Strict tenant isolation, server-side RBAC, and structured audit logging (`STUDENT_ADMITTED`).
+
+##### 2. Files Created
+The following 5 files were created to implement Stage 1 of Student Management:
+
+| File Path | File Type | Purpose | Main Functionality | Why It Was Needed |
+| :--- | :--- | :--- | :--- | :--- |
+| `src/lib/validations/student.ts` | TypeScript (Zod) | Validation Schemas | Validates student admission inputs, Indian demographics (`category`, `rteCandidate`), bounded DOB (1900–2100), and academic placement (`classId`, `sectionId`, `academicYear`). | Enforces strict type safety and schema validation on both client form and server action. |
+| `src/lib/actions/students.ts` | Next.js Server Action | Student Mutations API | Implements `createStudent` server action with atomic `Student + Enrollment` transaction, tenant isolation, RBAC, and audit logging. | Provides secure, tenant-isolated server-side mutation for admitting students. |
+| `src/app/(dashboard)/dashboard/students/page.tsx` | Next.js Server Page | Student Management Route | Server component fetching students, computing metric cards, and rendering the student roster and admission modal. | Resolves `/dashboard/students` 404 stub with the primary student management interface. |
+| `src/components/students/student-table.tsx` | React Client Component | Student Directory Table | Interactive table with real-time search (name, admission number), multi-filters (Academic Year default "ALL", Class, Category, RTE Quota, Status), category badges, and RTE badges. | Provides administrators and teachers with a filterable, responsive student directory. |
+| `src/components/students/create-student-dialog.tsx` | React Client Component | Student Admission Modal | Modal dialog using React Hook Form + Zod resolver with cascading Class $\rightarrow$ Section selector, validation feedback, and server error banner. | Enables administrators to admit students and assign initial enrollments without leaving the page. |
+
+##### 3. Purpose & Technical Breakdown of Each File
+
+###### 1. `src/lib/validations/student.ts`
+* **What was added:** `createStudentSchema` and inferred type `CreateStudentInput`.
+* **Validation Rules:**
+  * `admissionNumber`: 1–50 characters, trimmed.
+  * `firstName`: 1–50 characters, trimmed.
+  * `lastName`: Optional/empty or up to 50 characters, trimmed.
+  * `dateOfBirth`: Optional string validated against Gregorian calendar year bounds (1900–2100) to protect database integrity.
+  * `gender`: Enum `MALE | FEMALE | OTHER`.
+  * `category`: Enum `GENERAL | SC | ST | OBC` (Indian demographic reservation categories).
+  * `rteCandidate`: Boolean flag (Right to Education Act 25% quota).
+  * `address`, `city`, `state`, `pincode`: Optional Indian address fields (`pincode` validated to 6-digit regex `/^\d{6}$/` when provided).
+  * `parentName`, `parentPhone`, `parentEmail`: Guardian contact info.
+  * Academic placement: `classId` (CUID), `sectionId` (optional CUID), `academicYear` (regex `/^\d{4}-\d{4}$/`).
+* **Design Decision:** Default values were purposefully omitted from Zod object schemas to prevent type divergence between form input and submission output, deferring default values to React Hook Form `defaultValues`.
+
+###### 2. `src/lib/actions/students.ts`
+* **What was added:** `createStudent(input: CreateStudentInput)` server action returning typed `ActionResult<{ studentId: string }>`.
+* **How it works:**
+  1. Resolves tenant session via `requireTenant()`.
+  2. Enforces RBAC: verifies `ctx.role === "ADMIN"`. Returns structured error if unauthorized.
+  3. Validates payload using `createStudentSchema.safeParse(input)`.
+  4. Resolves and validates class and section: verifies `class.schoolId === ctx.schoolId` and `section.classId === classId`.
+  5. Pre-checks for duplicate admission number within the school boundary: `prisma.student.findUnique({ where: { schoolId_admissionNumber: { schoolId: ctx.schoolId, admissionNumber } } })`.
+  6. Safely parses Date of Birth ensuring bounded ISO timestamp or `null`.
+  7. Executes an **atomic transaction** via `prisma.$transaction`:
+     * Creates `Student` record with `schoolId: ctx.schoolId`.
+     * Creates `Enrollment` record linking `studentId`, `classId`, `sectionId`, `academicYear`, and `status: "ACTIVE"`.
+  8. Emits a structured audit log event `STUDENT_ADMITTED` in `AuditLog` table using `logAudit()` recording `studentId`, `admissionNumber`, `classId`, and `sectionId`.
+  9. Revalidates paths: `/dashboard/students`, `/dashboard/classes`, and `/dashboard/sections`.
+
+###### 3. `src/app/(dashboard)/dashboard/students/page.tsx`
+* **What was added:** Server page component rendering `/dashboard/students` (HTTP 200).
+* **How it works:**
+  * Invokes `requireTenant()` to ensure authenticated tenant context.
+  * Fetches all students belonging to `schoolId` with current `enrollments` including `class` and `section` metadata.
+  * Fetches active classes and sections belonging to `schoolId` for filtering and modal dropdowns.
+  * Calculates summary metrics: `Total Students`, `Active Students`, `RTE Candidates (25% Quota)`, and `Reserved Category (OBC/SC/ST)`.
+  * Renders header with `CreateStudentDialog` (conditionally shown for `ADMIN` role).
+  * Renders `<StudentTable>` passing student records, classes, and current role.
+
+###### 4. `src/components/students/student-table.tsx`
+* **What was added:** Client component rendering the student directory table.
+* **How it works:**
+  * Client-side search filtering across `firstName`, `lastName`, and `admissionNumber`.
+  * Multi-filters:
+    * Academic Year filter (defaults to `"ALL"` to maintain consistency with Classes & Sections).
+    * Class filter dropdown.
+    * Category filter dropdown (`ALL`, `GENERAL`, `OBC`, `SC`, `ST`).
+    * RTE Quota filter dropdown (`ALL`, `RTE (25% Quota)`, `General Seats`).
+    * Status filter dropdown (`ALL`, `ACTIVE`, `INACTIVE`, `TRANSFERRED`, `ALUMNI`).
+  * Table columns: Student Name, Admission No, Class & Section, Category, RTE Status, Date of Birth, Guardian Contact, Status Badge.
+  * Empty state graphic and dynamic count indicator ("Showing X of Y students").
+
+###### 5. `src/components/students/create-student-dialog.tsx`
+* **What was added:** Client component modal dialog for admitting a student.
+* **How it works:**
+  * Uses Base UI `Dialog` primitive styled with Tailwind CSS.
+  * React Hook Form with `@hookform/resolvers/zod`.
+  * Cascading selector: Selecting a Class dynamically filters the Section dropdown to only show sections belonging to that class.
+  * Indian demographics inputs: Category selector, RTE 25% Quota checkbox.
+  * Server error banner: Displays specific backend error messages (e.g. duplicate admission number alert).
+  * Pending state with spinner indicator (`Loader2`) during server submission.
+
+##### 4. Backend & Server Action Architecture
+1. **Atomic Transaction (`Student + Enrollment`):**
+   * Students in Indian schools cannot exist without academic placement. `createStudent` executes within `prisma.$transaction([ ... ])`. If either the student creation or the initial enrollment record fails, the entire transaction rolls back cleanly, preventing orphan student records without class assignments.
+2. **Tenant Isolation:**
+   * Multi-tenancy is enforced on every operation:
+     * `ctx.schoolId` is injected into `Student.create` and `Enrollment.create`.
+     * Parent class and section ownership is explicitly verified against `ctx.schoolId`.
+     * Student admission number uniqueness is validated against the composite key `@@unique([schoolId, admissionNumber])`.
+3. **Server-Side RBAC:**
+   * Only users with `ctx.role === "ADMIN"` are permitted to execute student admission. Any mutation attempt by `TEACHER`, `STUDENT`, or `PARENT` is rejected at the server action level with HTTP 403 / structured rejection.
+4. **Structured Audit Logging:**
+   * Successfully admitted students trigger `logAudit()`:
+     * Action: `STUDENT_ADMITTED`
+     * Entity: `Student`
+     * Details: `{ studentId, admissionNumber, classId, sectionId, academicYear, rteCandidate, category }`
+     * User: `ctx.userId`
+
+##### 5. Frontend & UI Architecture
+1. **Base UI & Design System:**
+   * Consistent with Phase 1 and Phase 2 Module 1 design patterns.
+   * Visual badge styling:
+     * Category: Neutral slate badge (`GENERAL`), Blue badge (`OBC`), Purple badge (`SC`), Indigo badge (`ST`).
+     * RTE Quota: Amber badge (`RTE 25%`) highlighting Right to Education affirmative action compliance.
+     * Status: Green badge (`ACTIVE`).
+2. **Role-Based UI Rendering:**
+   * `ADMIN`: Sees "Admit Student" trigger button opening admission dialog.
+   * `TEACHER`: Receives clean read-only directory view with `Admit Student` button omitted from DOM.
+
+##### 6. Database Impact
+* **Prisma Schema (`prisma/schema.prisma`):** **UNCHANGED.** No schema adjustments were needed.
+* **Migrations (`prisma/migrations/`):** **UNCHANGED.** No new migrations generated.
+* **Seed Data (`prisma/seed.ts`):** **UNCHANGED.** Existing seed data preserved (`DEMO001`, `Class 6`, `Section A`, student `Aarav Patel` with `ADM-2025-001`).
+* **Models Utilized:**
+  * `Student`: `id`, `schoolId`, `admissionNumber`, `firstName`, `lastName`, `dateOfBirth`, `gender`, `category`, `rteCandidate`, `address`, `city`, `state`, `pincode`, `parentName`, `parentPhone`, `parentEmail`, `status`.
+  * `Enrollment`: `id`, `schoolId`, `studentId`, `classId`, `sectionId`, `academicYear`, `status`.
+  * `Class`, `Section`: Foreign key validation and cascading selectors.
+  * `AuditLog`: Security audit trail.
+* **Constraints Enforced:**
+  * `@@unique([schoolId, admissionNumber])` on `Student`.
+  * `@@index([schoolId])` on `Student` and `Enrollment`.
+
+##### 7. Dependency Impact
+* **`package.json`:** **UNCHANGED.**
+* **`package-lock.json`:** **UNCHANGED.**
+* **New Packages Installed:** **0.**
+* **Reused Dependencies:** `zod`, `react-hook-form`, `@hookform/resolvers`, `@base-ui/react`, `lucide-react`, `@prisma/client`, `date-fns`.
+
+##### 8. Issues Discovered and Resolved During Implementation
+1. **Date Input Edge Case in PostgreSQL (`@db.Date`):**
+   * *Issue:* In HTML `<input type="date">`, typing continuous digits without separators (e.g. `05102015`) in Chromium browsers temporarily produces an astronomical year such as `50510`. While JavaScript `Date.parse()` accepts this, PostgreSQL's `@db.Date` column crashes or rejects out-of-range dates.
+   * *Resolution:* Added a strict regex and year boundary validator (1900 to 2100) in `src/lib/validations/student.ts`, and implemented safe date normalization in `src/lib/actions/students.ts`.
+2. **React Hook Form + Zod Resolver Type Divergence:**
+   * *Issue:* Using `.default(...)` within Zod object schemas produces different input and output TypeScript types (`z.input` vs `z.output`), causing compiler errors with `useForm<CreateStudentInput>`.
+   * *Resolution:* Removed `.default(...)` from the Zod schema and configured default values strictly within React Hook Form's `useForm({ defaultValues: ... })`.
+3. **Tenant Context Property Mapping:**
+   * *Issue:* The `TenantContext` interface returned by `requireTenant()` exposes `userId` (not `user.id`).
+   * *Resolution:* Correctly passed `userId: ctx.userId` into `logAudit()`.
+
+##### 9. Testing & Verification
+
+| Test ID | Test Category | Method / Tool | Result | Verified Details |
+| :--- | :--- | :--- | :--- | :--- |
+| **STU-TEST-01** | Static Type Checking | `npx tsc --noEmit` in WSL | **PASS** | 0 TypeScript errors across the entire codebase. Strict type checking adhered to. |
+| **STU-TEST-02** | Production Build | `npm run build` in WSL | **PASS** | Compilation succeeded; dynamic route `ƒ /dashboard/students` (6.43 kB) generated cleanly. |
+| **STU-TEST-03** | Database Constraints & Atomic Transaction | `scripts/test-student-stage1.ts` | **PASS** | Seeded student `Aarav Patel` (`ADM-2025-001`, `Class 6 / Section A`) verified. Atomic `Student + Enrollment` creation verified. Audit log entry creation verified. Database unique constraint on duplicate admission number verified. |
+| **STU-TEST-04** | Route Loading & 404 Resolution | Automated Browser Subagent | **PASS** | Admin logged in; navigated to `/dashboard/students`. Page returned HTTP 200 with complete header, metric cards (`Total: 1`, `Active: 1`), and seeded record `Aarav Patel`. |
+| **STU-TEST-05** | Student Admission Flow | Automated Browser Subagent | **PASS** | Admin opened `Admit Student` dialog, filled out form for `Pooja Sharma` (`ADM-2025-002`, `Class 6 / Section A`, `OBC`, `RTE: true`). Student admitted successfully; metrics updated to `Total: 2`, `Active: 2`, `RTE: 1`, `Reserved: 1`. |
+| **STU-TEST-06** | Duplicate Admission Number Error | Automated Browser Subagent | **PASS** | Admin attempted to admit a student using duplicate number `ADM-2025-001`. Form displayed red alert banner: *"A student with admission number 'ADM-2025-001' already exists in this school."* |
+| **STU-TEST-07** | Search & Filter Validation | Automated Browser Subagent | **PASS** | Live search for `"Pooja"` isolated Pooja Sharma's record. RTE Quota filter `"RTE (25% Quota)"` isolated Pooja Sharma; `"General Seats"` isolated Aarav Patel. |
+| **STU-TEST-08** | Teacher Read-Only RBAC | Automated Browser Subagent | **PASS** | Logged in as `teacher@demo.evoerp.in`. Navigated to `/dashboard/students`. Roster displayed in strict read-only mode (`Admit Student` button omitted from DOM). |
+
+##### 10. Current Status
+* **Stage 1 (Student Directory & Admission):** **COMPLETE & VERIFIED**
+
+---
+
+#### Stage 2 — Student Profile / Edit / Transfer
+* **Status:** **NOT IMPLEMENTED**
+* **Planned Scope:**
+  * Student Profile Detail Sheet (`StudentDetailSheet`) providing 360-degree profile view, parent contact, and enrollment history.
+  * Edit Student modal (`EditStudentDialog`) for updating demographic and address information.
+  * Section transfer workflow with historical enrollment tracking.
+  * Student status transitions (`ACTIVE` $\rightarrow$ `TRANSFERRED` / `ALUMNI`).
+  * Safe deactivation controls preventing destructive database hard-deletions.
+
+---
+
+### Module 3 — Teachers
+* **Status:** **NOT IMPLEMENTED**
+* **Planned Scope:** Teacher directory, staff profiles, class teacher assignments, and subject teacher mappings (`/dashboard/teachers`).
+
+---
+
+### Module 4 — Subjects
+* **Status:** **NOT IMPLEMENTED**
+* **Planned Scope:** Subject catalog, class-subject assignments, and elective management (`/dashboard/subjects`).
+
+---
+
+### Module 5 — Attendance
+* **Status:** **NOT IMPLEMENTED**
+* **Planned Scope:** Daily class attendance register, bulk attendance marking, attendance reporting, and parent view (`/dashboard/attendance`, `/dashboard/my-attendance`).
+
+---
+
+### Module 6 — Exams / Marks / Grades
+* **Status:** **NOT IMPLEMENTED**
+* **Planned Scope:** CBSE-aligned assessment cycles, term exams, marks entry workflows, and grading calculations (`/dashboard/exams`, `/dashboard/my-grades`).
+
+---
+
+### Module 7 — Report Cards
+* **Status:** **NOT IMPLEMENTED**
+* **Planned Scope:** Term report card generation, CBSE scholastic and co-scholastic formatting, and PDF export.
+
