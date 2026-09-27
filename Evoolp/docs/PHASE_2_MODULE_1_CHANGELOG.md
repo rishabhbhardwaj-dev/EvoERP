@@ -548,8 +548,146 @@ The following 5 files were updated to support Stage 2 capabilities:
 ---
 
 ### Module 3 — Teachers
-* **Status:** **NOT IMPLEMENTED**
-* **Planned Scope:** Teacher directory, staff profiles, class teacher assignments, and subject teacher mappings (`/dashboard/teachers`).
+
+#### Stage 1 — Teacher Directory & Onboarding
+
+##### 1. Overview & Purpose
+In school administration, teaching staff represent the primary operational actors who manage standards, deliver curricula, mark daily attendance registers, and submit assessment grades. Within the EvoERP schema, the `Teacher` model maintains a mandatory 1:1 relation to the `User` authentication table (`userId String @unique`).
+
+Stage 1 implemented the core capabilities for Teacher Management:
+1. Primary route `/dashboard/teachers` (resolving the previous 404 stub).
+2. Summary metric cards: Total Teachers, Active Staff, Inactive Staff, and Departments count.
+3. Interactive staff directory table (`TeacherTable`) with live search across name, email, and employee code, plus department and status multi-filtering.
+4. Staff onboarding modal dialog (`CreateTeacherDialog`) with cascading validation.
+5. Admin-configured initial password provisioning hashed with `bcryptjs` without plaintext or hash exposure.
+6. Atomic `User + Teacher` creation inside a single database transaction (`prisma.$transaction`).
+7. Strict tenant isolation, server-side RBAC assertion, and structured audit logging (`TEACHER_CREATED`).
+
+##### 2. Files Created
+The following 5 files were created to implement Stage 1 of Teacher Management:
+
+| File Path | File Type | Purpose | Main Functionality | Why It Was Needed |
+| :--- | :--- | :--- | :--- | :--- |
+| `src/lib/validations/teacher.ts` | TypeScript (Zod) | Input Validation Schemas | Validates teacher onboarding inputs (`name`, `email`, `employeeCode`, `department`, `qualification`, `password` min 8 chars). | Enforces strict type safety and schema validation on both client form and server action. |
+| `src/lib/actions/teachers.ts` | Next.js Server Action | Teacher Mutations API | Implements `createTeacher` server action with atomic `User + Teacher` transaction, bcrypt password hashing, tenant isolation, RBAC, and audit logging. | Provides secure, tenant-isolated server-side mutation for onboarding teachers. |
+| `src/app/(dashboard)/dashboard/teachers/page.tsx` | Next.js Server Page | Teacher Management Route | Server component fetching teachers with linked user accounts, computing metric cards, and rendering the staff roster and onboarding modal. | Resolves `/dashboard/teachers` 404 stub with the primary teacher management interface. |
+| `src/components/teachers/teacher-table.tsx` | React Client Component | Teacher Directory Table | Interactive table with real-time search (name, email, employee code) and multi-filters (Department, Status), initials avatars, and active/inactive badges. | Provides administrators with a responsive, filterable teaching staff directory. |
+| `src/components/teachers/create-teacher-dialog.tsx` | React Client Component | Teacher Onboarding Modal | Modal dialog using React Hook Form + Zod resolver with department suggestions, password visibility toggle, validation feedback, and server error banners. | Enables administrators to register teachers and provision login accounts without leaving the page. |
+
+##### 3. Purpose & Technical Breakdown of Each File
+
+###### 1. `src/lib/validations/teacher.ts`
+* **What was added:** `createTeacherSchema`, `teacherStatusEnum`, and inferred type `CreateTeacherInput`.
+* **Validation Rules:**
+  * `name`: 1–100 characters, trimmed.
+  * `email`: 1–100 characters, trimmed, lowercased, valid email format.
+  * `employeeCode`: 1–30 characters, trimmed, non-empty institutional identifier.
+  * `department`: Optional/nullable string bounded to 50 characters.
+  * `qualification`: Optional/nullable string bounded to 100 characters.
+  * `password`: 8–100 characters, trimmed.
+* **Design Decision:** Default values were purposefully omitted from Zod object schemas to prevent type divergence between form input and submission output, deferring default values to React Hook Form `defaultValues`.
+
+###### 2. `src/lib/actions/teachers.ts`
+* **What was added:** `createTeacher(input: CreateTeacherInput)` server action returning typed `ActionResult<{ id: string }>`.
+* **How it works:**
+  1. Resolves tenant session via `requireTenant()`.
+  2. Enforces RBAC: verifies `ctx.role === "ADMIN"`. Returns structured error if unauthorized.
+  3. Validates payload using `createTeacherSchema.safeParse(input)`.
+  4. Normalizes `employeeCode` to uppercase and `email` to lowercase.
+  5. Pre-checks for duplicate employee code within the school boundary: `prisma.teacher.findUnique({ where: { schoolId_employeeCode: { schoolId: ctx.schoolId, employeeCode } } })`.
+  6. Pre-checks for duplicate email within the school boundary: `prisma.user.findUnique({ where: { schoolId_email: { schoolId: ctx.schoolId, email } } })`.
+  7. Hashes initial password using `bcrypt.hash(password, 10)`.
+  8. Executes an **atomic transaction** via `prisma.$transaction`:
+     * Creates `User` record with `schoolId: ctx.schoolId, name, email, passwordHash, role: "TEACHER", status: "ACTIVE"`.
+     * Creates `Teacher` record with `schoolId: ctx.schoolId, userId: user.id, employeeCode, department, qualification`.
+  9. Emits a structured audit log event `TEACHER_CREATED` in `AuditLog` table using `logAudit()` recording `employeeCode`, `name`, `email`, `department`, and `qualification` without exposing credentials.
+  10. Revalidates paths: `/dashboard/teachers`.
+
+###### 3. `src/app/(dashboard)/dashboard/teachers/page.tsx`
+* **What was added:** Server page component rendering `/dashboard/teachers` (HTTP 200).
+* **How it works:**
+  * Invokes `requireTenant()` to ensure authenticated tenant context.
+  * Queries all teachers belonging to `schoolId` including linked `user` (`id`, `name`, `email`, `role`, `status`, `createdAt`), ordered by `employeeCode: "asc"`.
+  * Extracts distinct departments from staff records for filter dropdown population.
+  * Calculates summary metrics: `Total Teachers`, `Active Staff`, `Inactive Staff`, and `Departments`.
+  * Renders header with `CreateTeacherDialog` (conditionally shown for `ADMIN` role).
+  * Renders `<TeacherTable>` passing teacher records and available departments.
+
+###### 4. `src/components/teachers/teacher-table.tsx`
+* **What was added:** Client component rendering the teacher directory table.
+* **How it works:**
+  * Client-side search filtering across `name`, `email`, and `employeeCode`.
+  * Multi-filters:
+    * Department filter dropdown (`ALL`, distinct departments, `UNASSIGNED`).
+    * Account Status filter dropdown (`ALL`, `ACTIVE`, `INACTIVE`).
+  * Table columns: Employee Code badge, Teacher Name with initials avatar, Email, Department badge, Qualification, Status Badge (`Active` / `Inactive`).
+  * Empty state with `UserCheck` icon and dynamic count indicator ("Showing X of Y teachers").
+
+###### 5. `src/components/teachers/create-teacher-dialog.tsx`
+* **What was added:** Client component modal dialog for onboarding teachers.
+* **How it works:**
+  * Uses Base UI `Dialog` primitive styled with Tailwind CSS.
+  * React Hook Form with `@hookform/resolvers/zod`.
+  * Pre-fills temporary default password (`Password123!`) with show/hide password visibility toggle (`Eye` / `EyeOff`).
+  * Datalist-backed department input with standard Indian school subject suggestions (`Mathematics`, `Science`, `Social Science`, `English`, `Hindi`, `Computer Science`, `Physical Education`, `Arts & Craft`, `Music`, `Sanskrit`) while permitting custom entries.
+  * Server error banner: Displays specific backend error messages (e.g. duplicate employee code or email alert).
+  * Pending state with spinner indicator (`Loader2`) during server submission.
+
+##### 4. Backend & Server Action Architecture
+1. **Atomic Transaction (`User + Teacher`):**
+   * Unlike students where user account creation is optional, teachers in EvoERP must hold authentication credentials to access their dashboard. `createTeacher` executes within `prisma.$transaction`. If either the user creation or the teacher profile insertion fails, the entire transaction rolls back cleanly, preventing orphan accounts.
+2. **Credential Security:**
+   * Passwords are validated for length (min 8 chars) and hashed using `bcryptjs` with 10 salt rounds before database insertion. Plaintext passwords and password hashes are never included in API/action returns or audit logs.
+3. **Tenant Isolation:**
+   * Multi-tenancy is enforced on every operation:
+     * `ctx.schoolId` is injected into `User.create` and `Teacher.create`.
+     * Employee code uniqueness is validated against the composite key `@@unique([schoolId, employeeCode])`.
+     * Email uniqueness is validated against the composite key `@@unique([schoolId, email])`.
+4. **Server-Side RBAC:**
+   * Only users with `ctx.role === "ADMIN"` are permitted to execute teacher onboarding. Any mutation attempt by non-admins is rejected at the server action level with a structured rejection.
+5. **Structured Audit Logging:**
+   * Successfully onboarded teachers trigger `logAudit()`:
+     * Action: `TEACHER_CREATED`
+     * Entity: `Teacher`
+     * Details: `{ employeeCode, name, email, department, qualification }`
+     * User: `ctx.userId`
+
+##### 5. Database Impact
+* **Prisma Schema (`prisma/schema.prisma`):** **UNCHANGED.** No schema adjustments were needed; existing models `Teacher` and `User` fully accommodated all Stage 1 operations.
+* **Migrations (`prisma/migrations/`):** **UNCHANGED.** Zero migrations generated.
+* **Seed Data (`prisma/seed.ts`):** **UNCHANGED.** Existing seed data preserved (`DEMO001`, teacher `Ravi Kumar` with `TCH-001`, `Mathematics`, `M.Sc, B.Ed`).
+* **Models Utilized:**
+  * `Teacher`: `id`, `schoolId`, `userId`, `employeeCode`, `department`, `qualification`, `createdAt`, `updatedAt`.
+  * `User`: `id`, `schoolId`, `name`, `email`, `passwordHash`, `role`, `status`.
+  * `AuditLog`: Security audit trail.
+* **Constraints Enforced:**
+  * `@@unique([schoolId, employeeCode])` on `Teacher`.
+  * `@@unique([schoolId, email])` on `User`.
+  * `@@index([schoolId])` on both models.
+
+##### 6. Dependency Impact
+* **`package.json`:** **UNCHANGED.**
+* **`package-lock.json`:** **UNCHANGED.**
+* **New Packages Installed:** **0.**
+* **Existing Dependencies Reused:** `zod`, `react-hook-form`, `@hookform/resolvers`, `@base-ui/react`, `lucide-react`, `bcryptjs`, `@prisma/client`.
+
+##### 7. Testing & Verification
+
+| Test ID | Test Category | Method / Tool | Result | Verified Details |
+| :--- | :--- | :--- | :--- | :--- |
+| **TCH-TEST-01** | Static Type Checking | `npx tsc --noEmit` in WSL | **PASS** | 0 TypeScript compilation errors across entire codebase. |
+| **TCH-TEST-02** | Production Build | `npm run build` in WSL | **PASS** | Dynamic route `ƒ /dashboard/teachers` (6.01 kB) compiled cleanly with 0 warnings. |
+| **TCH-TEST-03** | Seeded Teacher Discovery | `scripts/test-teacher-stage1.ts` | **PASS** | Seeded teacher `Ravi Kumar` (`TCH-001`, `Mathematics`, `teacher@demo.evoerp.in`) verified in database and discoverable. |
+| **TCH-TEST-04** | Atomic User + Teacher Creation | `scripts/test-teacher-stage1.ts` | **PASS** | Created `Sunita Rao` (`TCH-002`, `sunita@demo.evoerp.in`, `Science`, `M.Sc, B.Ed`); atomic creation inside `prisma.$transaction` verified. |
+| **TCH-TEST-05** | Credential Hashing & Security | `scripts/test-teacher-stage1.ts` | **PASS** | Password hashed with bcrypt salt rounds 10; verifiable with `bcrypt.compare`; plaintext not stored. |
+| **TCH-TEST-06** | Duplicate Employee Code Guard | `scripts/test-teacher-stage1.ts` | **PASS** | Duplicate `TCH-002` insertion rejected by unique composite constraint `schoolId_employeeCode`. |
+| **TCH-TEST-07** | Duplicate Email Guard | `scripts/test-teacher-stage1.ts` | **PASS** | Duplicate email `sunita@demo.evoerp.in` insertion rejected by unique composite constraint `schoolId_email`. |
+| **TCH-TEST-08** | Audit Log Trail | `scripts/test-teacher-stage1.ts` | **PASS** | `TEACHER_CREATED` audit log entry written with correct metadata without password exposure. |
+| **TCH-TEST-09** | Tenant Isolation | `scripts/test-teacher-stage1.ts` | **PASS** | Queries partitioned cleanly by `schoolId`; cross-tenant leakage prevented. |
+
+##### 8. Current Status
+* **Stage 1 (Teacher Directory & Onboarding):** **COMPLETE & VERIFIED**
+* **Stage 2 (Teacher Profile Sheet, Edit, Status Deactivation, Safe Deletion):** **NOT IMPLEMENTED**
 
 ---
 

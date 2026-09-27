@@ -25,7 +25,8 @@
 | **Phase 2** | Module 1 — Classes & Sections | Full | **COMPLETE** | `/dashboard/classes` & `/dashboard/sections`, mutations, guards, verified & pushed |
 | **Phase 2** | Module 2 — Students | Stage 1 | **COMPLETE** | Directory, Admission dialog, Atomic Student+Enrollment transaction, RBAC, Audit log |
 | **Phase 2** | Module 2 — Students | Stage 2 | **COMPLETE** | Profile Detail Sheet, Edit Student, Section Transfer, Status Lifecycle, Safe Deletion |
-| **Phase 2** | Module 3 — Teachers | — | **NOT IMPLEMENTED** | Teacher Directory & Staff Profiles |
+| **Phase 2** | Module 3 — Teachers | Stage 1 | **COMPLETE** | Directory, Onboarding modal, Atomic User+Teacher transaction, Unique employeeCode, RBAC, Audit log |
+| **Phase 2** | Module 3 — Teachers | Stage 2 | **NOT IMPLEMENTED** | Profile Detail Sheet, Edit Staff, Status Deactivation, Safe Deletion |
 | **Phase 2** | Module 4 — Subjects | — | **NOT IMPLEMENTED** | Subject Catalog & Class Assignment |
 | **Phase 2** | Module 5 — Attendance | — | **NOT IMPLEMENTED** | Daily Student Attendance workflow |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | — | **NOT IMPLEMENTED** | CBSE Assessment cycles & Marks entry |
@@ -75,12 +76,28 @@ The following features have been implemented and verified via TypeScript checks 
      * Database transaction script (`scripts/test-student-stage2.ts`): Verified student edit, diff audit logging, section transfer, status lifecycle transitions, and deletion guards against PostgreSQL container in WSL2.
      * Automated browser tests: Verified full admin flows (profile inspection, edit, transfer, status update) and teacher read-only view in Chromium.
 
+5. **Teacher Directory & Onboarding (Module 3 — Stage 1):**
+   * Staff directory at `/dashboard/teachers` resolving previous 404 stub with HTTP 200.
+   * Summary metric cards: Total Teachers, Active Staff, Inactive Staff, Departments count.
+   * Interactive directory table (`TeacherTable`) with real-time search (name, email, employee code) and multi-filtering (Department, Account Status).
+   * Discoverability: Seeded demo teacher `Ravi Kumar` (`TCH-001`, `Mathematics`, `M.Sc, B.Ed`, `teacher@demo.evoerp.in`) immediately discoverable.
+   * Staff onboarding modal (`CreateTeacherDialog`) with React Hook Form + Zod resolver (`createTeacherSchema`).
+   * Credential provisioning: Admin-configured initial password (min 8 chars) hashed with `bcryptjs` (salt rounds 10); plaintext passwords and password hashes are never exposed in client payloads or audit logs.
+   * Atomic `User + Teacher` creation inside `prisma.$transaction`.
+   * Multi-tenant data integrity: `schoolId` derived exclusively from server session; duplicate `employeeCode` (`@@unique([schoolId, employeeCode])`) and duplicate `email` (`@@unique([schoolId, email])`) strictly rejected per school tenant.
+   * Server-side RBAC: `ADMIN` onboarding privileges; non-admin mutations rejected.
+   * Structured audit logging: `TEACHER_CREATED` event written to `AuditLog` table on onboarding without credential exposure.
+   * Quality & Test Verification:
+     * `tsc --noEmit`: 0 TypeScript errors across codebase.
+     * `npm run build`: Successful build; dynamic route `ƒ /dashboard/teachers` (6.01 kB).
+     * Integration test script (`scripts/test-teacher-stage1.ts`): Verified tenant isolation, seeded `Ravi Kumar`, atomic creation, bcrypt password hashing, duplicate employeeCode/email rejections, and audit log generation against PostgreSQL container in WSL2 (9 / 9 tests passed).
+
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
-### Future Phase 2 Modules
-* Module 3: Teachers (`/dashboard/teachers`)
+### Future Phase 2 Modules & Stages
+* Module 3: Teachers — Stage 2: Profile Detail Sheet, Edit Staff, Status Deactivation, Safe Deletion (`/dashboard/teachers`)
 * Module 4: Subjects (`/dashboard/subjects`)
 * Module 5: Attendance (`/dashboard/attendance`, `/dashboard/my-attendance`)
 * Module 6: Exams / Marks / Grades (`/dashboard/exams`, `/dashboard/my-grades`)
@@ -90,12 +107,11 @@ The following features have been implemented and verified via TypeScript checks 
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 2 — Module 3 — Teachers Management**
+* **Target:** **Phase 2 — Module 3 — Teachers Management (Stage 2)**
 * **Primary Scope:**
-  1. Teachers Directory route at `/dashboard/teachers`.
-  2. Teacher profile creation & staff record onboarding.
-  3. Employee code uniqueness per school tenant.
-  4. Class teacher assignment & subject specialization mappings.
-  5. Teacher directory filters (Department, Status, Search).
+  1. Teacher Profile Detail Sheet (`TeacherDetailSheet`) with 360-degree staff dossier.
+  2. Teacher Edit modal (`EditTeacherDialog`) with field-level diff audit logging (`TEACHER_UPDATED`).
+  3. Status Lifecycle transitions (`user.status` between `ACTIVE` and `INACTIVE`) with audit tracking.
+  4. Safe deletion safeguards and pre-deletion snapshots (`TEACHER_DELETED`).
 
 
