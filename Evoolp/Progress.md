@@ -23,7 +23,7 @@
 | **Phase 1** | Foundation | Full | **COMPLETE** | Auth, Sessions, Tenant isolation, Multi-tenant DB, UI Shell, Role dashboard |
 | **Phase 2** | Module 1 — Classes & Sections | Full | **COMPLETE** | `/dashboard/classes` & `/dashboard/sections`, mutations, guards, verified & pushed |
 | **Phase 2** | Module 2 — Students | Stage 1 | **COMPLETE** | Directory, Admission dialog, Atomic Student+Enrollment transaction, RBAC, Audit log |
-| **Phase 2** | Module 2 — Students | Stage 2 | **NOT IMPLEMENTED** | Student Profile Detail, Student Edit, Section Transfer, Status transitions |
+| **Phase 2** | Module 2 — Students | Stage 2 | **COMPLETE** | Profile Detail Sheet, Edit Student, Section Transfer, Status Lifecycle, Safe Deletion |
 | **Phase 2** | Module 3 — Teachers | — | **NOT IMPLEMENTED** | Teacher Directory & Staff Profiles |
 | **Phase 2** | Module 4 — Subjects | — | **NOT IMPLEMENTED** | Subject Catalog & Class Assignment |
 | **Phase 2** | Module 5 — Attendance | — | **NOT IMPLEMENTED** | Daily Student Attendance workflow |
@@ -61,22 +61,22 @@ The following features have been implemented and verified via TypeScript checks 
    * Server-side RBAC: `ADMIN` admission privileges; `TEACHER` view rendered in strict read-only mode (`Admit Student` button omitted).
    * Structured audit logging: `STUDENT_ADMITTED` event logged in `AuditLog` table on successful admission.
 
-4. **Quality & Test Verification:**
-   * `tsc --noEmit`: 0 TypeScript errors across codebase.
-   * `npm run build`: Successful build; dynamic route `ƒ /dashboard/students` (6.43 kB).
-   * Database transaction script: Verified atomic transaction, duplicate admission number blocking, and audit log persistence.
-   * Automated browser tests: Verified full admission flow, duplicate error handling, search/filter isolation, and teacher read-only view.
+4. **Student Profile, Edit, Transfer & Lifecycle (Module 2 — Stage 2):**
+   * **360-Degree Profile Sheet (`StudentDetailSheet`):** Slide-over sheet triggered from the directory table rows (`View` button or row click) displaying student identity, status badge, age computation, Indian demographic indicators (Category, RTE 25% quota), residential address, linked parent details (`Suresh Patel`, `parent@demo.evoerp.in`), active placement, and chronological enrollment history.
+   * **Student Profile Edit (`EditStudentDialog` & `updateStudent`):** Modal dialog allowing administrators to update demographic fields (`firstName`, `lastName`, `dateOfBirth`, `gender`, `category`, `rteCandidate`, `address`) while strictly keeping institutional identifiers (`id`, `schoolId`, `admissionNumber`) immutable. Employs `diffChanges()` to record field-level deltas in `AuditLog` under `STUDENT_UPDATED`.
+   * **Section Transfer Workflow (`TransferSectionDialog` & `transferStudentSection`):** Controlled intra-class section re-allocations (Section A $\rightarrow$ Section B) maintaining the `@@unique([studentId, academicYear])` composite constraint without duplicate rows, updating the active `Enrollment` record, and emitting `STUDENT_SECTION_TRANSFERRED` audit logs with reason tracking.
+   * **Status Lifecycle Transitions (`ChangeStatusDialog` & `changeStudentStatus`):** Clean state transitions (`ACTIVE` $\rightarrow$ `TRANSFERRED` / `ALUMNI`, or re-activation) automatically synchronizing active `Enrollment.status` (`WITHDRAWN`, `COMPLETED`, `ACTIVE`) with `STUDENT_STATUS_CHANGED` audit trails.
+   * **Safe Deactivation & Deletion Guards (`DeleteStudentDialog` & `deleteStudent`):** Application-level barriers blocking destructive hard-deletions on multi-year student history (`_count.enrollments > 1`), promoting soft transitions and logging pre-deletion snapshots under `STUDENT_DELETED`.
+   * **Teacher Read-Only View:** Verified that teachers receive a clean read-only view with all mutation action triggers (`Edit Profile`, `Transfer Section`, `Change Status`, `Delete`) completely omitted from the DOM.
+   * **Quality & Test Verification:**
+     * `tsc --noEmit`: 0 TypeScript errors across codebase.
+     * `npm run build`: Successful build; dynamic route `ƒ /dashboard/students` (13.2 kB).
+     * Database transaction script (`scripts/test-student-stage2.ts`): Verified student edit, diff audit logging, section transfer, status lifecycle transitions, and deletion guards against PostgreSQL container in WSL2.
+     * Automated browser tests: Verified full admin flows (profile inspection, edit, transfer, status update) and teacher read-only view in Chromium.
 
 ---
 
-## 4. Current Incomplete Work (Stage 2 & Future Scope)
-
-### Student Management — Stage 2 (Immediate Scope)
-* **Student Profile Detail Sheet:** 360-degree sheet view of student profile, parent/guardian info, and enrollment history.
-* **Student Edit Dialog:** Updating demographic fields, address, and guardian contact details.
-* **Section Transfer Workflow:** Transferring active students between sections with enrollment record tracking.
-* **Student Status Transitions:** Transitioning status (`ACTIVE` $\rightarrow$ `TRANSFERRED` / `ALUMNI`).
-* **Safe Deactivation / Deletion:** Enforcing soft-deactivation controls over destructive database deletion.
+## 4. Current Incomplete Work (Future Scope)
 
 ### Future Phase 2 Modules
 * Module 3: Teachers (`/dashboard/teachers`)
@@ -89,10 +89,12 @@ The following features have been implemented and verified via TypeScript checks 
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 2 — Module 2 — Students Management — Stage 2**
+* **Target:** **Phase 2 — Module 3 — Teachers Management**
 * **Primary Scope:**
-  1. Student Detail Sheet (`StudentDetailSheet`) triggered from directory table rows.
-  2. Edit Student modal (`EditStudentDialog`) for demographic and contact updates.
-  3. Section transfer flow with audit trail.
-  4. Status transitions (`ACTIVE` $\rightarrow$ `TRANSFERRED` / `ALUMNI`) and soft-deactivation safeguards.
+  1. Teachers Directory route at `/dashboard/teachers`.
+  2. Teacher profile creation & staff record onboarding.
+  3. Employee code uniqueness per school tenant.
+  4. Class teacher assignment & subject specialization mappings.
+  5. Teacher directory filters (Department, Status, Search).
+
 

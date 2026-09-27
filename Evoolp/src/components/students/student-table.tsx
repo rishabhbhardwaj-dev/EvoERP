@@ -10,8 +10,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { StudentDetailSheet } from "./student-detail-sheet";
 import type { AppRole } from "@/types/next-auth";
-import { Search, Users, GraduationCap } from "lucide-react";
+import { Search, Users, GraduationCap, Eye } from "lucide-react";
 
 export interface StudentWithEnrollments {
   id: string;
@@ -24,10 +26,17 @@ export interface StudentWithEnrollments {
   rteCandidate: boolean;
   status: "ACTIVE" | "ALUMNI" | "TRANSFERRED";
   address: string | null;
+  createdAt: Date | string;
+  parent?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
   enrollments: Array<{
     id: string;
     academicYear: string;
     status: "ACTIVE" | "COMPLETED" | "WITHDRAWN";
+    createdAt?: Date | string;
     class: {
       id: string;
       name: string;
@@ -45,12 +54,19 @@ interface StudentTableProps {
   userRole: AppRole;
   academicYears: string[];
   classesList: Array<{ id: string; name: string }>;
+  classesWithSections?: Array<{
+    id: string;
+    name: string;
+    sections: Array<{ id: string; name: string }>;
+  }>;
 }
 
 export function StudentTable({
   initialStudents,
+  userRole,
   academicYears,
   classesList,
+  classesWithSections,
 }: StudentTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedYear, setSelectedYear] = useState<string>("ALL");
@@ -58,6 +74,14 @@ export function StudentTable({
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
   const [selectedRte, setSelectedRte] = useState<string>("ALL");
+
+  // Selected student for slide-over detail sheet
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  // Derive current student object so server action revalidations automatically update it
+  const selectedStudent =
+    initialStudents.find((s) => s.id === selectedStudentId) ?? null;
 
   // Filter students based on all criteria
   const filteredStudents = initialStudents.filter((student) => {
@@ -231,13 +255,14 @@ export function StudentTable({
               <TableHead className="w-[120px]">Academic Year</TableHead>
               <TableHead className="w-[120px]">Category</TableHead>
               <TableHead className="w-[100px]">RTE</TableHead>
-              <TableHead className="w-[100px] text-right">Status</TableHead>
+              <TableHead className="w-[100px]">Status</TableHead>
+              <TableHead className="w-[80px] text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredStudents.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-40 text-center">
+                <TableCell colSpan={8} className="h-40 text-center">
                   <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
                     <Users className="size-8 text-muted-foreground/50" />
                     <p className="font-medium text-foreground">No students found</p>
@@ -260,7 +285,14 @@ export function StudentTable({
                   st.enrollments.find((e) => e.status === "ACTIVE") ?? st.enrollments[0];
 
                 return (
-                  <TableRow key={st.id}>
+                  <TableRow
+                    key={st.id}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => {
+                      setSelectedStudentId(st.id);
+                      setIsDetailOpen(true);
+                    }}
+                  >
                     {/* Admission Number */}
                     <TableCell className="font-mono text-xs font-semibold">
                       <span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-foreground">
@@ -327,9 +359,9 @@ export function StudentTable({
                     </TableCell>
 
                     {/* Status */}
-                    <TableCell className="text-right">
+                    <TableCell>
                       {st.status === "ACTIVE" && (
-                        <span className="inline-flex rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                        <span className="inline-flex rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
                           Active
                         </span>
                       )}
@@ -344,6 +376,23 @@ export function StudentTable({
                         </span>
                       )}
                     </TableCell>
+
+                    {/* View Action Trigger */}
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedStudentId(st.id);
+                          setIsDetailOpen(true);
+                        }}
+                      >
+                        <Eye className="size-3.5" />
+                        <span>View</span>
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 );
               })
@@ -351,6 +400,16 @@ export function StudentTable({
           </TableBody>
         </Table>
       </div>
+
+      {/* Slide-over 360-degree Student Detail Sheet */}
+      <StudentDetailSheet
+        student={selectedStudent}
+        open={isDetailOpen}
+        onOpenChange={setIsDetailOpen}
+        userRole={userRole}
+        classesWithSections={classesWithSections}
+      />
     </div>
   );
 }
+

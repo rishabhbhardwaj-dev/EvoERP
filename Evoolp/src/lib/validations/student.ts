@@ -53,3 +53,67 @@ export const createStudentSchema = z.object({
 });
 
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;
+
+export const updateStudentSchema = z.object({
+  id: z.string().min(1, "Student ID is required"),
+  firstName: z
+    .string()
+    .trim()
+    .min(1, "First name is required")
+    .max(50, "First name must be 50 characters or less"),
+  lastName: z
+    .string()
+    .trim()
+    .min(1, "Last name is required")
+    .max(50, "Last name must be 50 characters or less"),
+  dateOfBirth: z
+    .string()
+    .trim()
+    .optional()
+    .nullable()
+    .refine((val) => {
+      if (!val) return true;
+      const d = new Date(val);
+      if (isNaN(d.getTime())) return false;
+      const year = d.getFullYear();
+      return year >= 1900 && year <= 2100;
+    }, "Date of birth must be a valid date between 1900 and 2100"),
+  gender: studentGenderEnum.optional().nullable(),
+  category: studentCategoryEnum,
+  rteCandidate: z.boolean(),
+  address: z
+    .string()
+    .trim()
+    .max(255, "Address must be 255 characters or less")
+    .optional()
+    .nullable(),
+});
+
+export type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
+
+export const transferSectionSchema = z.object({
+  studentId: z.string().min(1, "Student ID is required"),
+  targetSectionId: z.string().min(1, "Target section is required"),
+  reason: z
+    .string()
+    .trim()
+    .max(255, "Reason must be 255 characters or less")
+    .optional()
+    .nullable(),
+});
+
+export type TransferSectionInput = z.infer<typeof transferSectionSchema>;
+
+export const changeStudentStatusSchema = z.object({
+  studentId: z.string().min(1, "Student ID is required"),
+  status: studentStatusEnum,
+  reason: z
+    .string()
+    .trim()
+    .max(255, "Reason must be 255 characters or less")
+    .optional()
+    .nullable(),
+});
+
+export type ChangeStudentStatusInput = z.infer<typeof changeStudentStatusSchema>;
+

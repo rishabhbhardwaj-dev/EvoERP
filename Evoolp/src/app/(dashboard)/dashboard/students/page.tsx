@@ -13,6 +13,13 @@ export default async function StudentsPage() {
   const students = await prisma.student.findMany({
     where: { schoolId: ctx.schoolId },
     include: {
+      parent: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
       enrollments: {
         include: {
           class: { select: { id: true, name: true, academicYear: true } },
@@ -150,6 +157,7 @@ export default async function StudentsPage() {
         userRole={ctx.role}
         academicYears={academicYears}
         classesList={classesList}
+        classesWithSections={classes}
       />
     </div>
   );
