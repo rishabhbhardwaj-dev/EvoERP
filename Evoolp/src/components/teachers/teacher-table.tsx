@@ -10,7 +10,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { Search, GraduationCap, Mail, UserCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { TeacherDetailSheet } from "./teacher-detail-sheet";
+import type { AppRole } from "@/types/next-auth";
+import { Search, GraduationCap, Mail, UserCheck, Eye } from "lucide-react";
 
 export interface TeacherRecord {
   id: string;
@@ -31,15 +34,25 @@ export interface TeacherRecord {
 interface TeacherTableProps {
   initialTeachers: TeacherRecord[];
   departments: string[];
+  userRole: AppRole;
 }
 
 export function TeacherTable({
   initialTeachers,
   departments,
+  userRole,
 }: TeacherTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState<string>("ALL");
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
+
+  // Selected teacher for slide-over detail sheet
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  // Derive current teacher record so revalidation updates reflect immediately
+  const selectedTeacher =
+    initialTeachers.find((t) => t.id === selectedTeacherId) ?? null;
 
   // Filter teachers based on search term, department, and status
   const filteredTeachers = initialTeachers.filter((teacher) => {
@@ -160,12 +173,13 @@ export function TeacherTable({
               <TableHead className="font-semibold text-xs">Department</TableHead>
               <TableHead className="font-semibold text-xs">Qualification</TableHead>
               <TableHead className="w-[100px] font-semibold text-xs">Status</TableHead>
+              <TableHead className="w-[80px] text-right font-semibold text-xs">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredTeachers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-40 text-center">
+                <TableCell colSpan={7} className="h-40 text-center">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <UserCheck className="size-8 text-muted-foreground/50" />
                     <p className="text-sm font-medium text-muted-foreground">
@@ -188,7 +202,14 @@ export function TeacherTable({
                   .toUpperCase();
 
                 return (
-                  <TableRow key={t.id} className="hover:bg-muted/50 transition-colors">
+                  <TableRow
+                    key={t.id}
+                    onClick={() => {
+                      setSelectedTeacherId(t.id);
+                      setIsDetailOpen(true);
+                    }}
+                    className="hover:bg-muted/50 transition-colors cursor-pointer"
+                  >
                     {/* Employee Code */}
                     <TableCell className="font-mono text-xs font-semibold">
                       <span className="inline-flex rounded-md border bg-muted/50 px-2 py-0.5 text-xs text-foreground">
@@ -249,6 +270,23 @@ export function TeacherTable({
                         </span>
                       )}
                     </TableCell>
+
+                    {/* Action Trigger */}
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedTeacherId(t.id);
+                          setIsDetailOpen(true);
+                        }}
+                      >
+                        <Eye className="size-3.5" />
+                        <span>View</span>
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 );
               })
@@ -256,6 +294,14 @@ export function TeacherTable({
           </TableBody>
         </Table>
       </div>
+
+      {/* Slide-over 360-degree Teacher Detail Sheet */}
+      <TeacherDetailSheet
+        teacher={selectedTeacher}
+        open={isDetailOpen}
+        onOpenChange={setIsDetailOpen}
+        userRole={userRole}
+      />
     </div>
   );
 }

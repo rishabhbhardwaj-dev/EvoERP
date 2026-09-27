@@ -687,7 +687,57 @@ The following 5 files were created to implement Stage 1 of Teacher Management:
 
 ##### 8. Current Status
 * **Stage 1 (Teacher Directory & Onboarding):** **COMPLETE & VERIFIED**
-* **Stage 2 (Teacher Profile Sheet, Edit, Status Deactivation, Safe Deletion):** **NOT IMPLEMENTED**
+* **Stage 2 (Teacher Profile Sheet, Edit, Status Deactivation, Safe Deletion):** **COMPLETE & VERIFIED**
+
+---
+
+#### Stage 2 — Teacher Profile, Edit, Status Lifecycle & Safe Deletion
+
+##### 1. Objectives & Scope
+Stage 2 completed the lifecycle management of teaching staff in EvoERP, providing administrators with complete staff profile inspection, controlled editing with diff-level audit logging, reversible deactivation/reactivation, and safe deletion protections:
+1. **Teacher Profile Detail Sheet (`TeacherDetailSheet`):** Slide-over sheet offering a 360-degree staff dossier including initials avatar, account status badge, institutional email, employee code, department, qualifications, joining timestamp, and administrative action triggers.
+2. **Staff Profile Edit (`EditTeacherDialog` & `updateTeacher`):** Controlled modal enabling edits to teacher name, department (with standard department datalist suggestions), and qualifications, while strictly maintaining immutable institutional identifiers (`id`, `schoolId`, `employeeCode`, `email`). Uses `diffChanges()` to record delta entries in `AuditLog` (`TEACHER_UPDATED`).
+3. **Account Status Lifecycle (`ChangeTeacherStatusDialog` & `toggleTeacherStatus`):** Administrative toggle between `ACTIVE` and `INACTIVE` status with optional administrative reason recording, writing `TEACHER_STATUS_CHANGED` audit logs.
+4. **Safe Deletion Guard (`DeleteTeacherDialog` & `deleteTeacher`):** Safe deletion modal emphasizing deactivation over hard deletion. Requires explicit confirmation typing of the teacher's employee code. Records a complete pre-deletion staff snapshot to `AuditLog` (`TEACHER_DELETED`) and atomically purges `Teacher` and linked `User` records in `prisma.$transaction` without leaving orphaned user accounts.
+5. **Table & Page Integration:** Row click handler and explicit "View" action button in `TeacherTable`, dynamic status pill styling, and pass-through of `userRole` from server context.
+
+##### 2. Files Created
+1. `src/components/teachers/teacher-detail-sheet.tsx`: Slide-over 360-degree staff dossier modal with contextual action buttons.
+2. `src/components/teachers/edit-teacher-dialog.tsx`: Staff profile editing modal with React Hook Form + Zod resolver.
+3. `src/components/teachers/change-teacher-status-dialog.tsx`: Account status transition modal with reason tracking.
+4. `src/components/teachers/delete-teacher-dialog.tsx`: Safe deletion modal with code confirmation and soft-deactivation prompts.
+5. `scripts/test-teacher-stage2.ts`: Integration test script for Stage 2 covering all mutations, diff audits, snapshots, and tenant isolation.
+
+##### 3. Files Modified
+1. `src/lib/validations/teacher.ts`: Added `updateTeacherSchema` and `toggleTeacherStatusSchema`.
+2. `src/lib/actions/teachers.ts`: Implemented `updateTeacher`, `toggleTeacherStatus`, and `deleteTeacher` server actions.
+3. `src/components/teachers/teacher-table.tsx`: Integrated row click handler, "Actions" column with "View" trigger, and `TeacherDetailSheet`.
+4. `src/app/(dashboard)/dashboard/teachers/page.tsx`: Passed `userRole={ctx.role}` to `TeacherTable`.
+
+##### 4. Architectural & Security Decisions
+* **Strict Immutability of Institutional Identifiers:** `id`, `schoolId`, `employeeCode`, and `email` are strictly immutable during edits.
+* **Audit Trail Integrity:** All modifications calculate old vs. new values via `diffChanges()`. Deletions capture a full staff snapshot in `oldValues` of the `AuditLog` record before records are purged.
+* **Atomic Cascade Deletion:** In Prisma schema, `Teacher` references `User(id)` with `onDelete: Cascade`. Deleting `Teacher` alone does not cascade delete `User`. Therefore, `deleteTeacher` executes an atomic `prisma.$transaction` that deletes both `Teacher` and `User` records together.
+* **Zero Credential Exposure:** Password hashes and plaintext credentials are never accepted, returned, or written into `AuditLog` during profile updates or deletions.
+* **Tenant Isolation & RBAC:** All mutations verify `ctx.role === "ADMIN"` and assert `schoolId: ctx.schoolId` on every database query and transaction.
+
+##### 5. Testing & Verification
+
+| Test ID | Test Category | Method / Tool | Result | Verified Details |
+| :--- | :--- | :--- | :--- | :--- |
+| **TCH2-TEST-01** | Static Type Checking | `npx tsc --noEmit` | **PASS** | 0 TypeScript compilation errors across entire codebase. |
+| **TCH2-TEST-02** | Production Build | `npm run build` | **PASS** | Dynamic route `ƒ /dashboard/teachers` (7.2 kB) compiled cleanly with 0 warnings. |
+| **TCH2-TEST-03** | Seeded Teacher Profile | `scripts/test-teacher-stage2.ts` | **PASS** | Seeded teacher `Ravi Kumar` (`TCH-001`) full profile verified. |
+| **TCH2-TEST-04** | Atomic Profile Update & Diff Audit | `scripts/test-teacher-stage2.ts` | **PASS** | Updated name, department, qualification; verified `diffChanges` logged in `TEACHER_UPDATED`. |
+| **TCH2-TEST-05** | Deactivation with Reason | `scripts/test-teacher-stage2.ts` | **PASS** | Toggled status `ACTIVE` $\rightarrow$ `INACTIVE` with administrative reason; audit log written. |
+| **TCH2-TEST-06** | Reactivation | `scripts/test-teacher-stage2.ts` | **PASS** | Toggled status `INACTIVE` $\rightarrow$ `ACTIVE`; audit log written. |
+| **TCH2-TEST-07** | Safe Deletion & Snapshot | `scripts/test-teacher-stage2.ts` | **PASS** | `TEACHER_DELETED` snapshot written to `AuditLog`; `Teacher` and `User` atomically deleted. |
+| **TCH2-TEST-08** | Cross-Tenant Isolation | `scripts/test-teacher-stage2.ts` | **PASS** | Foreign school tenant records cannot be inspected or mutated. |
+| **TCH2-TEST-09** | Password Privacy | `scripts/test-teacher-stage2.ts` | **PASS** | Zero occurrences of password hashes or plaintext credentials in audit logs. |
+| **TCH2-TEST-UI** | Browser Runtime Verification | Chromium automated session | **PASS** | Full profile slide-over sheet inspection, edit dialog, status deactivation, reactivation, onboarding, and safe deletion modal verified in browser. |
+
+##### 6. Current Status
+* **Module 3 — Teachers Management (Stage 1 & Stage 2):** **COMPLETE & FULLY VERIFIED**
 
 ---
 

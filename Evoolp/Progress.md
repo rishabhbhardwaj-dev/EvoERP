@@ -26,7 +26,7 @@
 | **Phase 2** | Module 2 — Students | Stage 1 | **COMPLETE** | Directory, Admission dialog, Atomic Student+Enrollment transaction, RBAC, Audit log |
 | **Phase 2** | Module 2 — Students | Stage 2 | **COMPLETE** | Profile Detail Sheet, Edit Student, Section Transfer, Status Lifecycle, Safe Deletion |
 | **Phase 2** | Module 3 — Teachers | Stage 1 | **COMPLETE** | Directory, Onboarding modal, Atomic User+Teacher transaction, Unique employeeCode, RBAC, Audit log |
-| **Phase 2** | Module 3 — Teachers | Stage 2 | **NOT IMPLEMENTED** | Profile Detail Sheet, Edit Staff, Status Deactivation, Safe Deletion |
+| **Phase 2** | Module 3 — Teachers | Stage 2 | **COMPLETE** | Profile Detail Sheet, Edit Staff, Status Deactivation, Safe Deletion, diff audit logs |
 | **Phase 2** | Module 4 — Subjects | — | **NOT IMPLEMENTED** | Subject Catalog & Class Assignment |
 | **Phase 2** | Module 5 — Attendance | — | **NOT IMPLEMENTED** | Daily Student Attendance workflow |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | — | **NOT IMPLEMENTED** | CBSE Assessment cycles & Marks entry |
@@ -92,26 +92,36 @@ The following features have been implemented and verified via TypeScript checks 
      * `npm run build`: Successful build; dynamic route `ƒ /dashboard/teachers` (6.01 kB).
      * Integration test script (`scripts/test-teacher-stage1.ts`): Verified tenant isolation, seeded `Ravi Kumar`, atomic creation, bcrypt password hashing, duplicate employeeCode/email rejections, and audit log generation against PostgreSQL container in WSL2 (9 / 9 tests passed).
 
+6. **Teacher Profile, Edit, Status Lifecycle & Safe Deletion (Module 3 — Stage 2):**
+   * **360-Degree Profile Sheet (`TeacherDetailSheet`):** Slide-over sheet triggered from the directory table rows (`View` button or row click) displaying teacher initials avatar, full name, institutional email, status badge, employee code, department, academic qualifications, joining date, and administrative action triggers.
+   * **Staff Profile Edit (`EditTeacherDialog` & `updateTeacher`):** Modal dialog with React Hook Form + Zod validation (`updateTeacherSchema`) enabling administrators to update teacher name, department (with datalist suggestions), and qualifications. Keeps institutional identifiers (`id`, `schoolId`, `employeeCode`, `email`) strictly immutable. Uses `diffChanges()` to record old vs. new values in `AuditLog` under `TEACHER_UPDATED`.
+   * **Status Lifecycle Management (`ChangeTeacherStatusDialog` & `toggleTeacherStatus`):** Dialog for transitioning accounts between `ACTIVE` and `INACTIVE` with optional administrative reason tracking. Modifies `User.status` in an atomic transaction and writes `TEACHER_STATUS_CHANGED` audit records.
+   * **Safe Deactivation & Deletion (`DeleteTeacherDialog` & `deleteTeacher`):** Modal prioritizing deactivation over deletion, requiring explicit typing of employee code to confirm. Captures pre-deletion staff snapshot into `AuditLog` (`TEACHER_DELETED`) and atomically removes both `Teacher` and `User` records in `prisma.$transaction`.
+   * **Table & Page Integration:** Row click handler and explicit "View" action button in `TeacherTable`, dynamic status pill styling, and pass-through of `userRole` from server context.
+   * **Quality & Test Verification:**
+     * `tsc --noEmit`: 0 TypeScript errors across codebase.
+     * `npm run build`: Clean production build; dynamic route `ƒ /dashboard/teachers` (7.2 kB).
+     * Database integration test script (`scripts/test-teacher-stage2.ts`): Verified seeded teacher retrieval, edit diff calculation, status toggle (`ACTIVE` $\rightarrow$ `INACTIVE` $\rightarrow$ `ACTIVE`), safe deletion snapshot, atomic cascade cleanup, cross-tenant isolation, and zero password/hash exposure (13 / 13 tests passed).
+     * Automated browser tests: Verified slide-over sheet inspection, profile edit, status deactivation with reason, reactivation, onboarding, and deletion flow in Chromium.
+
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
-### Future Phase 2 Modules & Stages
-* Module 3: Teachers — Stage 2: Profile Detail Sheet, Edit Staff, Status Deactivation, Safe Deletion (`/dashboard/teachers`)
-* Module 4: Subjects (`/dashboard/subjects`)
-* Module 5: Attendance (`/dashboard/attendance`, `/dashboard/my-attendance`)
-* Module 6: Exams / Marks / Grades (`/dashboard/exams`, `/dashboard/my-grades`)
-* Module 7: Report Cards
+### Future Phase 2 Modules
+* Module 4: Subjects (`/dashboard/subjects`) — Catalog & Class Assignment
+* Module 5: Attendance (`/dashboard/attendance`, `/dashboard/my-attendance`) — Daily Student Attendance workflow
+* Module 6: Exams / Marks / Grades (`/dashboard/exams`, `/dashboard/my-grades`) — CBSE Assessment cycles & Marks entry
+* Module 7: Report Cards — Term Report Card generation
 
 ---
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 2 — Module 3 — Teachers Management (Stage 2)**
+* **Target:** **Phase 2 — Module 4 — Subjects Management**
 * **Primary Scope:**
-  1. Teacher Profile Detail Sheet (`TeacherDetailSheet`) with 360-degree staff dossier.
-  2. Teacher Edit modal (`EditTeacherDialog`) with field-level diff audit logging (`TEACHER_UPDATED`).
-  3. Status Lifecycle transitions (`user.status` between `ACTIVE` and `INACTIVE`) with audit tracking.
-  4. Safe deletion safeguards and pre-deletion snapshots (`TEACHER_DELETED`).
+  1. Subject Catalog Directory (`/dashboard/subjects`).
+  2. Subject Creation & Code Assignment (e.g. CBSE subject codes).
+  3. Class-Subject associations and curriculum mapping.
 
 

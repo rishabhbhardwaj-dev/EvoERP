@@ -124,6 +124,7 @@ export default async function TeachersPage() {
       <TeacherTable
         initialTeachers={teachers}
         departments={departments}
+        userRole={ctx.role}
       />
     </div>
   );
