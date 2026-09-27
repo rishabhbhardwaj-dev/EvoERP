@@ -16,7 +16,7 @@ Phase 1 established the multi-tenant SaaS foundation, security boundary, databas
 
 ### 2. Implementation Summary
 * **Multi-Tenant Architecture:** PostgreSQL 16 database running in a Docker container (`evoolp-db-1`) on WSL2. Multi-tenancy is enforced via a mandatory foreign key `schoolId` indexed across all tenant-scoped tables.
-* **Database ORM & Migrations:** Prisma 6.19.3. Initial migration `20260923112539_init` created models: `School`, `User`, `Role`, `Class`, `Section`, `Subject`, `Student`, `Enrollment`, `Teacher`, `Attendance`, `Exam`, `Grade`, `FeeStructure`, `FeePayment`, `AuditLog`.
+* **Database ORM & Migrations:** Prisma 6.19.3. Initial migration `20260923112539_init` created models: `School`, `User`, `Student`, `Teacher`, `Class`, `Section`, `Subject`, `Enrollment`, `AuditLog`, `Account`, `Session`, `VerificationToken`, and enums `Role`, `UserStatus`, `Gender`, `StudentCategory`, `StudentStatus`, `EnrollmentStatus`. *(Schema Clarification: Earlier high-level planning documentation loosely listed `Attendance`, `Exam`, `Grade`, `FeeStructure`, and `FeePayment` as models created in the initial migration; however, verified against `prisma/schema.prisma` and `prisma/migrations/20260923112539_init/migration.sql`, those entities do not currently exist in the database schema and are scheduled for dedicated migrations during their respective upcoming modules).*
 * **Database Seeding (`prisma/seed.ts`):** Seeded demo school `DEMO001` ("Delhi Public Academy"), demo users with hashed passwords (`admin@demo.evoerp.in`, `teacher@demo.evoerp.in`, `student@demo.evoerp.in`, `parent@demo.evoerp.in`), academic year `2025-2026`, `Class 6`, `Section A`, subject `Mathematics`, and initial student enrollment.
 * **Authentication & Session:** Implemented credentials authentication via NextAuth v5 beta (`next-auth@5.0.0-beta.32`) with JWT session strategy, bcrypt password verification, and edge-compatible middleware route protection (`src/middleware.ts`).
 * **Tenant Context Resolution (`src/lib/tenant.ts`):** Implemented server-side `requireTenant()` utility that derives `schoolId`, `userId`, `role`, and school metadata directly from the decrypted JWT session. Also provides `getFiscalYear()` computing the Indian financial year (`Apr–Mar`).
@@ -444,14 +444,106 @@ The following 5 files were created to implement Stage 1 of Student Management:
 
 ---
 
-#### Stage 2 — Student Profile / Edit / Transfer
-* **Status:** **NOT IMPLEMENTED**
-* **Planned Scope:**
-  * Student Profile Detail Sheet (`StudentDetailSheet`) providing 360-degree profile view, parent contact, and enrollment history.
-  * Edit Student modal (`EditStudentDialog`) for updating demographic and address information.
-  * Section transfer workflow with historical enrollment tracking.
-  * Student status transitions (`ACTIVE` $\rightarrow$ `TRANSFERRED` / `ALUMNI`).
-  * Safe deactivation controls preventing destructive database hard-deletions.
+#### Stage 2 — Student Profile, Edit, Transfer, Lifecycle & Safe Deletion
+
+##### 1. Overview & Purpose
+Stage 2 completed the comprehensive lifecycle management for enrolled students. Once a student is admitted, school administrators require granular administrative controls to inspect complete student academic dossiers, amend demographic records, re-allocate students across sections, transition lifecycle states (active, transferred, alumni), and safely delete records admitted in error without compromising multi-term academic integrity.
+
+##### 2. Files Created
+The following 6 files were created to implement Stage 2:
+
+| File Path | File Type | Purpose | Main Functionality |
+| :--- | :--- | :--- | :--- |
+| `src/components/students/student-detail-sheet.tsx` | React Client Component | 360-Degree Profile Sheet | Slide-over drawer displaying student identity, age computation, Indian demographic indicators, linked parent contact, current placement, and enrollment history timeline. |
+| `src/components/students/edit-student-dialog.tsx` | React Client Component | Student Edit Modal | Modal dialog with React Hook Form + Zod resolver for updating demographic and residential address fields. |
+| `src/components/students/transfer-section-dialog.tsx` | React Client Component | Section Transfer Modal | Modal dialog for re-allocating students between sections within their current class standard with reason tracking. |
+| `src/components/students/change-status-dialog.tsx` | React Client Component | Status Lifecycle Modal | Modal dialog for transitioning student status between `ACTIVE`, `TRANSFERRED`, and `ALUMNI`. |
+| `src/components/students/delete-student-dialog.tsx` | React Client Component | Safe Deletion Modal | Modal dialog providing application-level deletion barriers, confirmation checks, and soft-transition recommendations. |
+| `scripts/test-student-stage2.ts` | TypeScript Script | Integration Test Suite | Automated validation script running against PostgreSQL container testing update, diff audit, section transfer, status sync, and deletion barrier. |
+
+##### 3. Files Modified
+The following 5 files were updated to support Stage 2 capabilities:
+
+| File Path | Nature of Modification | Summary of Changes |
+| :--- | :--- | :--- |
+| `src/lib/validations/student.ts` | Schema Additions | Added `updateStudentSchema`, `transferSectionSchema`, `changeStudentStatusSchema` and exported inferred TypeScript types. |
+| `src/lib/actions/students.ts` | Server Actions Additions | Implemented `updateStudent`, `transferStudentSection`, `changeStudentStatus`, and `deleteStudent` server actions with tenant isolation, RBAC assertions, and audit logging. |
+| `src/components/students/student-table.tsx` | UI Integration | Integrated `StudentDetailSheet` state (`selectedStudentId`, `isDetailOpen`), added "View" action button with eye icon, and row click inspection triggers. |
+| `src/app/(dashboard)/dashboard/students/page.tsx` | Data Query Enhancement | Passed `classesWithSections` hierarchy down to `<StudentTable>` to enable dynamic section population inside the transfer dialog. |
+| `Progress.md` | Status Tracking | Documented completion of Stage 2 and aligned roadmap milestones. |
+
+##### 4. Technical Breakdown of Implemented Capabilities
+
+###### 1. 360-Degree Student Profile Sheet (`StudentDetailSheet`)
+* **Trigger:** Click on any student row or the dedicated "View" button in `<StudentTable>`.
+* **Visual Components:**
+  * Header avatar badge with student initials and status indicator (`ACTIVE`, `TRANSFERRED`, `ALUMNI`).
+  * Identity summary: Admission number, age calculation from Gregorian date of birth, category badge (`GENERAL`, `SC`, `ST`, `OBC`), and affirmative action badge (`RTE 25% Quota`).
+  * Guardian details: Displays linked parent name (`Suresh Patel`) and parent email (`parent@demo.evoerp.in`) resolved from relation `parent: { select: { id, name, email } }`.
+  * Academic placement: Current Class standard and Section badge.
+  * Chronological Enrollment Timeline: Lists all historical enrollment records showing academic year, class/section, and status badge (`ACTIVE`, `COMPLETED`, `WITHDRAWN`).
+  * Administrative Quick Actions: Action button strip (`Edit Profile`, `Transfer Section`, `Change Status`, `Delete Record`) conditionally rendered for `ADMIN`.
+
+###### 2. Student Profile Edit Flow (`EditStudentDialog` & `updateStudent`)
+* **Scope:** Permits modification of mutable demographic fields: `firstName`, `lastName`, `dateOfBirth`, `gender`, `category`, `rteCandidate`, and `address`.
+* **Immutability Enforcement:** Institutional identifiers (`id`, `schoolId`, `admissionNumber`) are strictly immutable and omitted from the update payload.
+* **Audit Diffing:** Invokes `diffChanges(oldValues, newValues)` from `@/lib/audit`. If no fields changed, database writes and audit logs are skipped. When fields change, granular before-and-after snapshots are written to `AuditLog` under action `STUDENT_UPDATED`.
+
+###### 3. Section Transfer Workflow (`TransferSectionDialog` & `transferStudentSection`)
+* **Context:** Intra-class section transfers (e.g. `Class 6 - Section A` $\rightarrow$ `Class 6 - Section B`).
+* **Relational Integrity:** Prisma enforces a composite unique constraint `@@unique([studentId, academicYear])` on `Enrollment`. Inserting a second enrollment row in the same academic year would violate this constraint.
+* **Solution:** `transferStudentSection` locates the student's active enrollment for the current term and updates its `sectionId` directly to the new section.
+* **Validation:** Verifies that the target section exists within the school tenant and belongs to the student's current class standard. Prevents redundant transfers to the student's existing section.
+* **Audit Trail:** Logs `STUDENT_SECTION_TRANSFERRED` recording old section, new section, academic year, and the administrator's stated reason.
+
+###### 4. Status Lifecycle Transitions (`ChangeStatusDialog` & `changeStudentStatus`)
+* **Lifecycle Rules:**
+  * `ACTIVE` $\rightarrow$ `TRANSFERRED`: Student has left the school. Sets `Student.status = TRANSFERRED` and automatically synchronizes active enrollment to `Enrollment.status = WITHDRAWN`.
+  * `ACTIVE` $\rightarrow$ `ALUMNI`: Student has graduated or completed schooling. Sets `Student.status = ALUMNI` and synchronizes active enrollment to `Enrollment.status = COMPLETED`.
+  * Re-activation: Sets `Student.status = ACTIVE` and restores active enrollment to `Enrollment.status = ACTIVE`.
+* **Atomic Consistency:** Updates both `Student` and `Enrollment` inside `prisma.$transaction`.
+* **Audit Trail:** Logs `STUDENT_STATUS_CHANGED` with previous status, new status, enrollment status delta, and reason.
+
+###### 5. Safe Deletion Barrier (`DeleteStudentDialog` & `deleteStudent`)
+* **Historical Data Protection:** Deleting a student who has attended multiple academic years destroys historical grade sheets, attendance registers, and audit integrity.
+* **Application Guard:** `deleteStudent` queries `_count.enrollments`. If `enrollments > 1`, the deletion is blocked with an informative rejection guiding the administrator to change status to `TRANSFERRED` or `ALUMNI` instead.
+* **Error Correction Hard-Deletion:** If `enrollments <= 1` (such as a typo or duplicate admitted by mistake in the current term), hard-deletion is permitted.
+* **Audit Snapshot:** Before executing deletion, a comprehensive JSON snapshot of the student and all enrollment placements is recorded in `AuditLog` under `STUDENT_DELETED`.
+
+##### 5. Security & RBAC
+1. **Server-Side Session Assertion:** Every server action begins with `const ctx = await requireTenant()`. The `schoolId` is derived exclusively from the decrypted session token.
+2. **Role Authorization:** Actions assert `if (ctx.role !== "ADMIN") return { success: false, error: "Unauthorized..." }`.
+3. **Teacher Read-Only Rendering:** Non-admin users (`TEACHER`) can view the slide-over profile sheet, but all mutation buttons (`Edit Profile`, `Transfer Section`, `Change Status`, `Delete Record`) are completely omitted from the DOM.
+
+##### 6. Database Impact
+* **Prisma Schema (`prisma/schema.prisma`):** **UNCHANGED.** No schema adjustments or migrations were required; existing models `Student`, `Enrollment`, `Class`, `Section`, `User`, and `AuditLog` fully accommodated all Stage 2 operations.
+* **Constraints Respected:**
+  * `@@unique([schoolId, admissionNumber])`
+  * `@@unique([studentId, academicYear])`
+  * `@@index([schoolId])`
+* **Seed Data:** **UNCHANGED.** Seed record `Aarav Patel` (`ADM-2025-001`, `Class 6 / Section A`) preserved.
+
+##### 7. Testing & Verification Summary
+
+| Test ID | Test Category | Method / Tool | Result | Verified Details |
+| :--- | :--- | :--- | :--- | :--- |
+| **STU2-TEST-01** | Static Type Checking | `npx tsc --noEmit` in WSL | **PASS** | 0 TypeScript compilation errors across entire codebase. |
+| **STU2-TEST-02** | Production Build | `npm run build` in WSL | **PASS** | Dynamic route `ƒ /dashboard/students` (13.2 kB) generated cleanly without warnings. |
+| **STU2-TEST-03** | Database Integration Suite | `npx tsx scripts/test-student-stage2.ts` | **PASS** | Seed data verification, student profile edit, diff-based audit logging, section transfer, status transitions, and multi-year deletion protection all passed against PostgreSQL 16 container. |
+| **STU2-TEST-04** | Profile Sheet & Navigation | Automated Browser Subagent | **PASS** | Admin clicked student row; `StudentDetailSheet` opened displaying 360-degree demographic data, parent info, and enrollment history. |
+| **STU2-TEST-05** | Profile Edit Flow | Automated Browser Subagent | **PASS** | Admin edited address and demographic category; updated details reflected immediately in table and audit trail. |
+| **STU2-TEST-06** | Section Transfer Flow | Automated Browser Subagent | **PASS** | Admin transferred student from Section A to Section B; verified active section badge updated to Sec B and audit entry logged. |
+| **STU2-TEST-07** | Status Lifecycle Transition | Automated Browser Subagent | **PASS** | Admin transitioned student to `TRANSFERRED`; verified status badge updated and enrollment marked withdrawn. |
+| **STU2-TEST-08** | Teacher Read-Only View | Automated Browser Subagent | **PASS** | Teacher logged in; opened student detail sheet; confirmed all edit/transfer/status/delete buttons were completely omitted from DOM. |
+
+##### 8. Git History
+* **Commit:** `7e956cd` (`feat(academic): complete student management stage 2`)
+* **Branch:** `evoerp-foundation-fixes`
+* **Status:** Committed & Pushed to `origin/evoerp-foundation-fixes`.
+
+##### 9. Current Status
+* **Stage 1 (Student Directory & Admission):** **COMPLETE & VERIFIED**
+* **Stage 2 (Profile, Edit, Transfer, Lifecycle, Safe Deletion):** **COMPLETE & VERIFIED**
 
 ---
 
