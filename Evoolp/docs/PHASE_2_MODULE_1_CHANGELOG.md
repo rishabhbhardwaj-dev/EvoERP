@@ -793,7 +793,67 @@ Stage 1 implements the institutional Subject Master Catalog for EvoERP, establis
 
 ##### 6. Current Status
 * **Stage 1 (Subject Master Catalog & Onboarding):** **COMPLETE & FULLY VERIFIED**
-* **Stage 2 (Subject Detail Dossier, Edit & Safe Deletion):** **NEXT TARGET**
+* **Stage 2 (Subject Detail Dossier, Edit & Safe Deletion):** **COMPLETE & FULLY VERIFIED**
+
+---
+
+#### Stage 2: Subject Detail Dossier, Profile Edit & Safe Deletion
+
+##### 1. Overview & Capabilities
+1. **360-Degree Subject Dossier (`SubjectDetailSheet`):** Slide-over sheet triggered by row click or explicit "View" action button displaying subject name, code, CBSE standard classification pill vs. Institutional indicator, record UUID, created-at date, and last-updated timestamp.
+2. **Subject Profile Edit (`EditSubjectDialog` & `updateSubject`):** Modal dialog with React Hook Form + Zod resolver (`updateSubjectSchema`). Enables administrators to edit subject name and code. Normalizes code to uppercase (`.trim().toUpperCase()`). Prevents duplicate collision against other subjects in the same school tenant (`id: { not: existing.id }`) while allowing same-code self-updates. Employs `diffChanges()` to record field-level deltas in `AuditLog` under `SUBJECT_UPDATED`.
+3. **Safe Subject Deletion (`DeleteSubjectDialog` & `deleteSubject`):** Deletion modal requiring explicit confirmation by typing the subject code. The "Permanently Delete" button remains disabled until the exact subject code matches. Takes a full pre-deletion snapshot (`id`, `name`, `code`, `schoolId`, `createdAt`) into `AuditLog` under `SUBJECT_DELETED` before deleting the database record.
+4. **Table Integration:** Enhanced `SubjectTable` with row-click handler, an explicit "Actions" column with "View" button (`Eye` icon), and seamless opening of `SubjectDetailSheet`.
+5. **Strict Server-Side RBAC:** Only `ADMIN` role can update or delete subjects. `TEACHER` role receives a clean read-only view with `Edit Details` and `Delete Subject` action controls completely omitted from the DOM.
+6. **Zero Schema & Migration Impact:** Fully utilizes the existing `Subject` model in `prisma/schema.prisma` without any schema alterations or migrations.
+
+##### 2. Files Created
+1. `src/components/subjects/subject-detail-sheet.tsx`: Slide-over sheet showing 360-degree subject information and admin action controls.
+2. `src/components/subjects/edit-subject-dialog.tsx`: Edit modal with validation, uppercase normalization, and collision prevention.
+3. `src/components/subjects/delete-subject-dialog.tsx`: Deletion dialog with code typing confirmation and pre-deletion snapshot warnings.
+4. `scripts/test-subject-stage2.ts`: Integration test script verifying database constraints, update normalization, collision protection, same-code self-update, pre-deletion audit snapshots, and cross-tenant isolation.
+
+##### 3. Files Modified
+1. `src/lib/validations/subject.ts`: Added `updateSubjectSchema`, `type UpdateSubjectInput`, `deleteSubjectSchema`, and `type DeleteSubjectInput`.
+2. `src/lib/actions/subjects.ts`: Implemented `updateSubject` and `deleteSubject` server actions with tenant isolation, RBAC checks, and audit logging.
+3. `src/components/subjects/subject-table.tsx`: Integrated row click handler, "View" action button, and `SubjectDetailSheet`.
+4. `Evoolp/Progress.md`: Updated Module 4 status to COMPLETE and aligned next target to Module 5 (Attendance).
+5. `Evoolp/docs/PHASE_2_MODULE_1_CHANGELOG.md`: Added technical implementation record and test matrix for Stage 2.
+
+##### 4. Architectural & Security Decisions
+* **Collision Detection with Self-Exclusion:** When editing a subject code, `updateSubject` queries `where: { schoolId: ctx.schoolId, code, id: { not: existing.id } }`. This permits updating a subject's name while keeping its existing code without throwing a false duplicate error.
+* **Granular Diff Auditing:** Before saving updates, `diffChanges()` is computed comparing old values against normalized new values, logging only modified keys in `AuditLog` under `SUBJECT_UPDATED`.
+* **Safe Deletion with Confirmation Code Typing:** Permanent deletion requires the user to type the subject code. The client validates input equality before enabling the deletion button, and the server action re-verifies matching code before execution.
+* **Pre-Deletion Snapshot Preservation:** A complete JSON snapshot of the record (`id`, `name`, `code`, `schoolId`, `createdAt`) is logged in `AuditLog` under `SUBJECT_DELETED` prior to executing `prisma.subject.delete`.
+* **Zero Dependency Addition:** No external packages installed. Implemented with standard React Hook Form, Zod, and existing Tailwind/Base UI components.
+
+##### 5. Testing & Verification Matrix
+
+| Test ID | Test Category | Method / Tool | Result | Verified Details |
+| :--- | :--- | :--- | :--- | :--- |
+| **SUB2-TEST-01** | Static Type Checking | `npx tsc --noEmit` in WSL | **PASS** | 0 TypeScript compilation errors across entire codebase. |
+| **SUB2-TEST-02** | Production Build | `npm run build` in WSL | **PASS** | Dynamic route `ƒ /dashboard/subjects` (5.95 kB) compiled cleanly with 0 warnings. |
+| **SUB2-TEST-03** | Baseline Records Discovery | `scripts/test-subject-stage2.ts` | **PASS** | Demo school `DEMO001`, Admin Anita Sharma, and baseline subjects `MATH6` and `086` verified intact. |
+| **SUB2-TEST-04** | Update Validation Schema | `scripts/test-subject-stage2.ts` | **PASS** | `updateSubjectSchema` validates standard alphanumeric and formatted codes. |
+| **SUB2-TEST-05** | Space & Symbol Rejection | `scripts/test-subject-stage2.ts` | **PASS** | Rejects update codes containing spaces. |
+| **SUB2-TEST-06** | Code Uppercase Normalization | `scripts/test-subject-stage2.ts` | **PASS** | Lowercase update input `test-sub-mod` normalized to `TEST-SUB-MOD`. |
+| **SUB2-TEST-07** | Granular Diff Auditing | `scripts/test-subject-stage2.ts` | **PASS** | `diffChanges()` captures field diffs and logs `SUBJECT_UPDATED` entry in `AuditLog`. |
+| **SUB2-TEST-08** | Duplicate Code Rejection on Edit | `scripts/test-subject-stage2.ts` | **PASS** | Collision detection rejects updating code to an existing code in the same school. |
+| **SUB2-TEST-09** | Same-Code Self-Update | `scripts/test-subject-stage2.ts` | **PASS** | Updating name while keeping same code succeeds without false duplicate collision. |
+| **SUB2-TEST-10** | Confirmation Code Validation | `scripts/test-subject-stage2.ts` | **PASS** | Mismatched confirmation code rejected for deletion. |
+| **SUB2-TEST-11** | Pre-Deletion Snapshot Logging | `scripts/test-subject-stage2.ts` | **PASS** | `SUBJECT_DELETED` snapshot logged with complete record payload before removal. |
+| **SUB2-TEST-12** | Database Deletion Execution | `scripts/test-subject-stage2.ts` | **PASS** | Subject permanently removed from database upon confirmed deletion. |
+| **SUB2-TEST-13** | Cross-Tenant Isolation | `scripts/test-subject-stage2.ts` | **PASS** | School A cannot view, update, or delete School B subjects. |
+| **SUB2-TEST-14** | Baseline Data Preservation | `scripts/test-subject-stage2.ts` | **PASS** | Baseline subjects `MATH6` and `086` verified intact after all test mutations. |
+| **SUB2-TEST-15** | Regression Test Suite | `scripts/test-subject-stage1.ts` | **PASS** | All 15 Stage 1 integration tests pass without regression. |
+| **SUB2-TEST-UI-ADMIN** | Admin Browser Verification | Chromium automated session | **PASS** | Admin verified on `/dashboard/subjects`: detail sheet inspection, edit name, code normalization, duplicate code error alert, same-code self-update, safe deletion with confirmation typing, and clean database state. |
+| **SUB2-TEST-UI-TEACHER** | Teacher Browser Verification | Chromium automated session | **PASS** | Teacher verified on `/dashboard/subjects`: catalog inspection, read-only detail sheet, complete absence of `Edit Details` and `Delete Subject` controls, search filter (`Sci`), and column sorting. |
+
+##### 6. Current Status
+* **Stage 1 (Subject Master Catalog & Onboarding):** **COMPLETE & FULLY VERIFIED**
+* **Stage 2 (Subject Detail Dossier, Edit & Safe Deletion):** **COMPLETE & FULLY VERIFIED**
+* **Module 4 (Subjects Management):** **FULL MODULE COMPLETE**
+* **Next Development Target:** **Phase 2 — Module 5 (Attendance Management)**
 
 ---
 

@@ -10,8 +10,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { SubjectDetailSheet } from "./subject-detail-sheet";
 import type { AppRole } from "@/types/next-auth";
-import { Search, BookOpen, Hash, Calendar, ArrowUpDown } from "lucide-react";
+import { Search, BookOpen, Hash, Calendar, ArrowUpDown, Eye } from "lucide-react";
 
 export interface SubjectRecord {
   id: string;
@@ -34,6 +36,14 @@ export function SubjectTable({ initialSubjects, userRole }: SubjectTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState<SortField>("code");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+  // Selected subject for slide-over detail sheet
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  // Derive current subject record so revalidation updates reflect immediately
+  const selectedSubject =
+    initialSubjects.find((s) => s.id === selectedSubjectId) ?? null;
 
   // Filter subjects based on name or code search
   const filteredSubjects = initialSubjects.filter((subject) => {
@@ -145,13 +155,14 @@ export function SubjectTable({ initialSubjects, userRole }: SubjectTableProps) {
                   <ArrowUpDown className="size-3 text-muted-foreground" />
                 </button>
               </TableHead>
+              <TableHead className="w-[80px] text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sortedSubjects.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={3}
+                  colSpan={4}
                   className="h-32 text-center text-muted-foreground"
                 >
                   <div className="flex flex-col items-center justify-center gap-2">
@@ -175,7 +186,11 @@ export function SubjectTable({ initialSubjects, userRole }: SubjectTableProps) {
               sortedSubjects.map((subject) => (
                 <TableRow
                   key={subject.id}
-                  className="hover:bg-muted/50 transition-colors"
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => {
+                    setSelectedSubjectId(subject.id);
+                    setIsDetailOpen(true);
+                  }}
                 >
                   <TableCell className="font-mono text-xs font-semibold">
                     <span className="inline-flex items-center rounded-md border border-primary/20 bg-primary/10 px-2 py-0.5 text-primary">
@@ -192,12 +207,35 @@ export function SubjectTable({ initialSubjects, userRole }: SubjectTableProps) {
                       year: "numeric",
                     })}
                   </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedSubjectId(subject.id);
+                        setIsDetailOpen(true);
+                      }}
+                    >
+                      <Eye className="size-3.5" />
+                      <span>View</span>
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
       </div>
+
+      {/* Slide-over 360-degree Subject Detail Sheet */}
+      <SubjectDetailSheet
+        subject={selectedSubject}
+        open={isDetailOpen}
+        onOpenChange={setIsDetailOpen}
+        userRole={userRole}
+      />
     </div>
   );
 }

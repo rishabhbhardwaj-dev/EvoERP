@@ -9,7 +9,7 @@
 
 * **Current Phase:** Phase 2 — Academic Core
 * **Active Branch:** `evoerp-foundation-fixes` (Tracking: `origin/evoerp-foundation-fixes`)
-* **Current HEAD Commit:** `cfcab80`
+* **Current HEAD Commit:** `fb7ca8e`
 * **Working Tree:** Clean (0 uncommitted changes, verified 2026-09-28)
 * **Workspace:** `D:\Dekstop\EvoERP`
 * **Environment:** Next.js 15.5.25 App Router, React 19, TypeScript 5.9.3 (strict), Prisma 6.19.3, NextAuth v5 beta
@@ -28,7 +28,7 @@
 | **Phase 2** | Module 3 — Teachers | Stage 1 | **COMPLETE** | Directory, Onboarding modal, Atomic User+Teacher transaction, Unique employeeCode, RBAC, Audit log |
 | **Phase 2** | Module 3 — Teachers | Stage 2 | **COMPLETE** | Profile Detail Sheet, Edit Staff, Status Deactivation, Safe Deletion, diff audit logs |
 | **Phase 2** | Module 4 — Subjects | Stage 1 | **COMPLETE** | Subject Catalog Directory, Create modal, code normalization, tenant isolation, RBAC, Audit log |
-| **Phase 2** | Module 4 — Subjects | Stage 2 | **NOT IMPLEMENTED** | Subject Detail Dossier, Edit modal, Safe Deletion with confirmation & snapshot |
+| **Phase 2** | Module 4 — Subjects | Stage 2 | **COMPLETE** | Subject Detail Dossier, Edit modal, Safe Deletion with confirmation & snapshot |
 | **Phase 2** | Module 5 — Attendance | — | **NOT IMPLEMENTED** | Daily Student Attendance workflow |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | — | **NOT IMPLEMENTED** | CBSE Assessment cycles & Marks entry |
 | **Phase 2** | Module 7 — Report Cards | — | **NOT IMPLEMENTED** | Term Report Card generation |
@@ -105,7 +105,6 @@ The following features have been implemented and verified via TypeScript checks 
      * Database integration test script (`scripts/test-teacher-stage2.ts`): Verified seeded teacher retrieval, edit diff calculation, status toggle (`ACTIVE` $\rightarrow$ `INACTIVE` $\rightarrow$ `ACTIVE`), safe deletion snapshot, atomic cascade cleanup, cross-tenant isolation, and zero password/hash exposure (13 / 13 tests passed).
      * Automated browser tests: Verified slide-over sheet inspection, profile edit, status deactivation with reason, reactivation, onboarding, and deletion flow in Chromium.
 
-
 7. **Subject Directory & Master Catalog Onboarding (Module 4 — Stage 1):**
    * Catalog route at `/dashboard/subjects` resolving previous 404 stub with HTTP 200.
    * Summary metric cards: Total Subjects, Unique Subject Codes, CBSE Standard Codes, Recent Additions.
@@ -119,15 +118,25 @@ The following features have been implemented and verified via TypeScript checks 
    * Quality & Test Verification:
      * `tsc --noEmit`: 0 TypeScript errors across codebase.
      * `npm run build`: Successful build; dynamic route `ƒ /dashboard/subjects` (5.39 kB).
-     * Integration test script (`scripts/test-subject-stage1.ts`): 15 / 15 tests passed in WSL2 (tenant isolation, seeded math, normalization, validation variations, duplicate rejection, cross-tenant isolation, audit log).
+     * Integration test script (`scripts/test-subject-stage1.ts`): 15 / 15 tests passed in WSL2.
      * Automated browser tests: Verified admin flow (catalog inspection, add subject with suggestion, real-time search and clear) and teacher read-only view.
+
+8. **Subject Profile, Edit & Safe Deletion (Module 4 — Stage 2):**
+   * **360-Degree Detail Dossier (`SubjectDetailSheet`):** Slide-over sheet triggered by row click or explicit "View" action button displaying subject name, code, CBSE vs. Institutional classification indicator, record UUID, creation date, and last-updated timestamp.
+   * **Subject Profile Edit (`EditSubjectDialog` & `updateSubject`):** Modal dialog with React Hook Form + Zod validation (`updateSubjectSchema`) enabling administrators to update subject name and code. Auto-normalizes code to uppercase. Includes collision protection blocking updates to duplicate codes across the school while permitting same-code self-updates. Employs `diffChanges()` to record field-level deltas in `AuditLog` under `SUBJECT_UPDATED`.
+   * **Safe Deletion Flow (`DeleteSubjectDialog` & `deleteSubject`):** Permanent deletion modal requiring explicit confirmation by typing the subject's exact code. Permanently delete button remains disabled until exact code matches. Writes a full pre-deletion snapshot (`id`, `name`, `code`, `schoolId`, `createdAt`) into `AuditLog` under `SUBJECT_DELETED` before deleting record.
+   * **Teacher Read-Only View:** Strict read-only enforcement: Teachers can view the full subject catalog and open detail sheets, while `Edit Details` and `Delete Subject` mutation controls are completely absent from the DOM.
+   * **Quality & Test Verification:**
+     * `tsc --noEmit`: 0 TypeScript compilation errors.
+     * `npm run build`: Clean production build; dynamic route `ƒ /dashboard/subjects` (5.95 kB).
+     * Integration test script (`scripts/test-subject-stage2.ts`): 17 / 17 tests passed in WSL2 (seeded retrieval, update normalization, diff audit logging, duplicate collision prevention, same-code self-update, confirmation code validation, pre-deletion snapshot, cross-tenant protection, and baseline data preservation).
+     * Automated browser runtime verification: Fully verified in Chromium for both Admin (sheet inspection, edit, duplicate rejection, safe deletion with confirmation typing) and Teacher (read-only sheet, absent mutation controls, search, and sorting).
 
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
 ### Future Phase 2 Modules
-* Module 4: Subjects Stage 2 (`/dashboard/subjects`) — Detail Dossier Sheet, Edit, Safe Deletion
 * Module 5: Attendance (`/dashboard/attendance`, `/dashboard/my-attendance`) — Daily Student Attendance workflow
 * Module 6: Exams / Marks / Grades (`/dashboard/exams`, `/dashboard/my-grades`) — CBSE Assessment cycles & Marks entry
 * Module 7: Report Cards — Term Report Card generation
@@ -136,12 +145,12 @@ The following features have been implemented and verified via TypeScript checks 
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 2 — Module 4 — Subjects Management (Stage 2)**
+* **Target:** **Phase 2 — Module 5 — Attendance Management**
 * **Primary Scope:**
-  1. 360-degree slide-over dossier (`SubjectDetailSheet`).
-  2. Subject profile edit modal (`EditSubjectDialog`) with `diffChanges()` audit logging (`SUBJECT_UPDATED`).
-  3. Safe deletion dialog (`DeleteSubjectDialog`) with code typing confirmation and pre-deletion snapshot in `AuditLog` (`SUBJECT_DELETED`).
-  4. Interactive table row click integration to open detail sheet.
+  1. Attendance register directory and student attendance marking workflows (`/dashboard/attendance`).
+  2. Bulk daily attendance entry by Class & Section (Present, Absent, Late, Excused).
+  3. Strict tenant isolation, atomic transaction persistence, and date-level constraints.
+  4. Teacher attendance marking privileges and student/parent attendance views (`/dashboard/my-attendance`).
 
 
 
