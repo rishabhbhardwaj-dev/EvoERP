@@ -741,9 +741,59 @@ Stage 2 completed the lifecycle management of teaching staff in EvoERP, providin
 
 ---
 
-### Module 4 — Subjects
-* **Status:** **NOT IMPLEMENTED**
-* **Planned Scope:** Subject catalog, class-subject assignments, and elective management (`/dashboard/subjects`).
+### Module 4 — Subjects Management
+
+#### Stage 1 — Subject Master Catalog Directory & Onboarding
+
+##### 1. Objectives & Scope
+Stage 1 implements the institutional Subject Master Catalog for EvoERP, establishing curriculum subject registration, code standardization, per-tenant duplicate protections, and role-partitioned directory views:
+1. **Subject Directory Route (`/dashboard/subjects`):** Resolves the 404 stub with HTTP 200, integrating directly with existing role navigation in `src/lib/nav.ts`.
+2. **Summary Metric Cards:** Displays Total Subjects in catalog, Unique Subject Codes, CBSE Standard 3-digit Codes, and Recent Additions.
+3. **Interactive Catalog Table (`SubjectTable`):** Real-time client-side search (name, code), client-side sorting (code, name, creation date), and badge formatting.
+4. **Subject Creation Dialog (`CreateSubjectDialog`):** Modal dialog with React Hook Form + Zod resolver (`createSubjectSchema`) offering CBSE standard quick suggestions (Math 041, Science 086, English Core 301, etc.).
+5. **Code Normalization & Validation:** Enforces strict 1–20 character limits, auto-trims, uppercase-normalizes (`.trim().toUpperCase()`), and supports alphanumeric characters, hyphens, underscores, slashes, and periods (`/^[A-Za-z0-9\-_/.]{1,20}$/`).
+6. **Multi-Tenant Data Integrity:** Derives `schoolId` strictly on the server session via `requireTenant()`, enforcing per-school uniqueness via `@@unique([schoolId, code])`.
+7. **Server-Side RBAC:** Only `ADMIN` role can execute mutations (`createSubject`); `TEACHER` role receives a clean read-only view with the `Add Subject` trigger omitted.
+8. **Structured Audit Logging:** Automatically logs `SUBJECT_CREATED` events in `AuditLog` table on subject addition.
+
+##### 2. Files Created
+1. `src/lib/validations/subject.ts`: Zod schema `createSubjectSchema` and inferred type `CreateSubjectInput`.
+2. `src/lib/actions/subjects.ts`: Next.js Server Action `createSubject` with tenant resolution, RBAC verification, duplicate checking, and audit logging.
+3. `src/components/subjects/create-subject-dialog.tsx`: Subject creation dialog with React Hook Form + Zod resolver and CBSE suggestions.
+4. `src/components/subjects/subject-table.tsx`: Filterable, searchable directory table with sorting and empty states.
+5. `src/app/(dashboard)/dashboard/subjects/page.tsx`: Server component fetching tenant subjects and rendering metric cards and catalog roster.
+6. `scripts/test-subject-stage1.ts`: WSL2 integration test script verifying database constraints, normalization, duplicate protection, and audit logging.
+
+##### 3. Files Modified
+1. `Evoolp/Progress.md`: Updated to record Phase 2 Module 4 Stage 1 completion and roadmap alignment.
+2. `Evoolp/docs/PHASE_2_MODULE_1_CHANGELOG.md`: Added technical implementation record and test verification results for Module 4 Stage 1.
+
+##### 4. Architectural & Security Decisions
+* **Strict Immutability of Tenant Scope:** `schoolId` is derived exclusively from decrypted server session via `requireTenant()`. Client payloads cannot specify or override `schoolId`.
+* **Zero Schema & Migration Impact:** Utilizes existing `Subject` model in `prisma/schema.prisma` without modifications or migrations.
+* **CBSE & Custom Code Support:** Regex `/^[A-Za-z0-9\-_/.]{1,20}$/` supports standard 3-digit CBSE/ICSE board codes (`041`, `086`, `301`), school-custom codes (`MATH6`, `ENG-101`), slash-separated course codes (`PHY/LAB`), and period notations (`CHEM.101`).
+* **Non-Blocking Audit Logging:** Audit entries (`SUBJECT_CREATED`) are persisted via `logAudit()` without blocking or crashing the primary transaction.
+
+##### 5. Testing & Verification
+
+| Test ID | Test Category | Method / Tool | Result | Verified Details |
+| :--- | :--- | :--- | :--- | :--- |
+| **SUB1-TEST-01** | Static Type Checking | `npx tsc --noEmit` in WSL | **PASS** | 0 TypeScript compilation errors across entire codebase. |
+| **SUB1-TEST-02** | Production Build | `npm run build` in WSL | **PASS** | Dynamic route `ƒ /dashboard/subjects` (5.39 kB) compiled cleanly with 0 warnings. |
+| **SUB1-TEST-03** | Seeded Subject Discovery | `scripts/test-subject-stage1.ts` | **PASS** | Seeded subject `Mathematics` (`MATH6`) verified in database and discoverable. |
+| **SUB1-TEST-04** | CBSE Code Validation | `scripts/test-subject-stage1.ts` | **PASS** | Validation passes for standard 3-digit CBSE code `301`. |
+| **SUB1-TEST-05** | Slash Code Validation | `scripts/test-subject-stage1.ts` | **PASS** | Validation passes for slash-supported code `PHY/LAB`. |
+| **SUB1-TEST-06** | Period Code Validation | `scripts/test-subject-stage1.ts` | **PASS** | Validation passes for period-supported code `CHEM.101`. |
+| **SUB1-TEST-07** | Space & Symbol Rejection | `scripts/test-subject-stage1.ts` | **PASS** | Rejects invalid codes containing spaces or illegal characters (`MATH 101`, `@MATH`). |
+| **SUB1-TEST-08** | Code Normalization | `scripts/test-subject-stage1.ts` | **PASS** | Lowercase input `eng-101` automatically normalized to `ENG-101`. |
+| **SUB1-TEST-09** | Audit Log Trail | `scripts/test-subject-stage1.ts` | **PASS** | `SUBJECT_CREATED` audit log entry recorded in `AuditLog` table with code and name. |
+| **SUB1-TEST-10** | Duplicate Code Guard | `scripts/test-subject-stage1.ts` | **PASS** | Duplicate code `ENG-101` within same tenant rejected by `schoolId_code` constraint. |
+| **SUB1-TEST-11** | Cross-Tenant Isolation | `scripts/test-subject-stage1.ts` | **PASS** | Separate tenant created `MATH6` without collision; DEMO001 queries strictly isolated. |
+| **SUB1-TEST-UI** | Browser Runtime Verification | Chromium automated session | **PASS** | Admin verified on `/dashboard/subjects` (metric cards, creation with suggestion, search filter); Teacher verified in strict read-only mode (`Add Subject` omitted). |
+
+##### 6. Current Status
+* **Stage 1 (Subject Master Catalog & Onboarding):** **COMPLETE & FULLY VERIFIED**
+* **Stage 2 (Subject Detail Dossier, Edit & Safe Deletion):** **NEXT TARGET**
 
 ---
 
@@ -762,4 +812,5 @@ Stage 2 completed the lifecycle management of teaching staff in EvoERP, providin
 ### Module 7 — Report Cards
 * **Status:** **NOT IMPLEMENTED**
 * **Planned Scope:** Term report card generation, CBSE scholastic and co-scholastic formatting, and PDF export.
+
 

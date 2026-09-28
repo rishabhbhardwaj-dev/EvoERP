@@ -9,8 +9,8 @@
 
 * **Current Phase:** Phase 2 — Academic Core
 * **Active Branch:** `evoerp-foundation-fixes` (Tracking: `origin/evoerp-foundation-fixes`)
-* **Current HEAD Commit:** `7e956cd`
-* **Working Tree:** Clean (0 uncommitted changes, verified 2026-09-27)
+* **Current HEAD Commit:** `cfcab80`
+* **Working Tree:** Clean (0 uncommitted changes, verified 2026-09-28)
 * **Workspace:** `D:\Dekstop\EvoERP`
 * **Environment:** Next.js 15.5.25 App Router, React 19, TypeScript 5.9.3 (strict), Prisma 6.19.3, NextAuth v5 beta
 * **Database:** PostgreSQL 16 Alpine container (`evoolp-db-1`) on port 5432 in WSL2
@@ -27,7 +27,8 @@
 | **Phase 2** | Module 2 — Students | Stage 2 | **COMPLETE** | Profile Detail Sheet, Edit Student, Section Transfer, Status Lifecycle, Safe Deletion |
 | **Phase 2** | Module 3 — Teachers | Stage 1 | **COMPLETE** | Directory, Onboarding modal, Atomic User+Teacher transaction, Unique employeeCode, RBAC, Audit log |
 | **Phase 2** | Module 3 — Teachers | Stage 2 | **COMPLETE** | Profile Detail Sheet, Edit Staff, Status Deactivation, Safe Deletion, diff audit logs |
-| **Phase 2** | Module 4 — Subjects | — | **NOT IMPLEMENTED** | Subject Catalog & Class Assignment |
+| **Phase 2** | Module 4 — Subjects | Stage 1 | **COMPLETE** | Subject Catalog Directory, Create modal, code normalization, tenant isolation, RBAC, Audit log |
+| **Phase 2** | Module 4 — Subjects | Stage 2 | **NOT IMPLEMENTED** | Subject Detail Dossier, Edit modal, Safe Deletion with confirmation & snapshot |
 | **Phase 2** | Module 5 — Attendance | — | **NOT IMPLEMENTED** | Daily Student Attendance workflow |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | — | **NOT IMPLEMENTED** | CBSE Assessment cycles & Marks entry |
 | **Phase 2** | Module 7 — Report Cards | — | **NOT IMPLEMENTED** | Term Report Card generation |
@@ -104,12 +105,29 @@ The following features have been implemented and verified via TypeScript checks 
      * Database integration test script (`scripts/test-teacher-stage2.ts`): Verified seeded teacher retrieval, edit diff calculation, status toggle (`ACTIVE` $\rightarrow$ `INACTIVE` $\rightarrow$ `ACTIVE`), safe deletion snapshot, atomic cascade cleanup, cross-tenant isolation, and zero password/hash exposure (13 / 13 tests passed).
      * Automated browser tests: Verified slide-over sheet inspection, profile edit, status deactivation with reason, reactivation, onboarding, and deletion flow in Chromium.
 
+
+7. **Subject Directory & Master Catalog Onboarding (Module 4 — Stage 1):**
+   * Catalog route at `/dashboard/subjects` resolving previous 404 stub with HTTP 200.
+   * Summary metric cards: Total Subjects, Unique Subject Codes, CBSE Standard Codes, Recent Additions.
+   * Interactive directory table (`SubjectTable`) with real-time search (name, code), client-side sorting (code, name, date), and badge formatting.
+   * Seeded discoverability: Seeded subject `Mathematics` (`MATH6`) immediately discoverable in catalog.
+   * Subject creation modal (`CreateSubjectDialog`) with React Hook Form + Zod resolver (`createSubjectSchema`) and CBSE standard quick suggestions.
+   * Robust code validation & normalization: Trimmed, uppercase-normalized, supporting alphanumeric codes, hyphens, underscores, slashes, and periods (`/^[A-Za-z0-9\-_/.]{1,20}$/`).
+   * Multi-tenant data integrity: `schoolId` derived exclusively from server session; duplicate code rejection per school tenant (`@@unique([schoolId, code])`).
+   * Server-side RBAC: `ADMIN` creation privileges; `TEACHER` clean read-only view (`Add Subject` button omitted).
+   * Structured audit logging: `SUBJECT_CREATED` event written to `AuditLog` table on subject addition.
+   * Quality & Test Verification:
+     * `tsc --noEmit`: 0 TypeScript errors across codebase.
+     * `npm run build`: Successful build; dynamic route `ƒ /dashboard/subjects` (5.39 kB).
+     * Integration test script (`scripts/test-subject-stage1.ts`): 15 / 15 tests passed in WSL2 (tenant isolation, seeded math, normalization, validation variations, duplicate rejection, cross-tenant isolation, audit log).
+     * Automated browser tests: Verified admin flow (catalog inspection, add subject with suggestion, real-time search and clear) and teacher read-only view.
+
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
 ### Future Phase 2 Modules
-* Module 4: Subjects (`/dashboard/subjects`) — Catalog & Class Assignment
+* Module 4: Subjects Stage 2 (`/dashboard/subjects`) — Detail Dossier Sheet, Edit, Safe Deletion
 * Module 5: Attendance (`/dashboard/attendance`, `/dashboard/my-attendance`) — Daily Student Attendance workflow
 * Module 6: Exams / Marks / Grades (`/dashboard/exams`, `/dashboard/my-grades`) — CBSE Assessment cycles & Marks entry
 * Module 7: Report Cards — Term Report Card generation
@@ -118,10 +136,12 @@ The following features have been implemented and verified via TypeScript checks 
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 2 — Module 4 — Subjects Management**
+* **Target:** **Phase 2 — Module 4 — Subjects Management (Stage 2)**
 * **Primary Scope:**
-  1. Subject Catalog Directory (`/dashboard/subjects`).
-  2. Subject Creation & Code Assignment (e.g. CBSE subject codes).
-  3. Class-Subject associations and curriculum mapping.
+  1. 360-degree slide-over dossier (`SubjectDetailSheet`).
+  2. Subject profile edit modal (`EditSubjectDialog`) with `diffChanges()` audit logging (`SUBJECT_UPDATED`).
+  3. Safe deletion dialog (`DeleteSubjectDialog`) with code typing confirmation and pre-deletion snapshot in `AuditLog` (`SUBJECT_DELETED`).
+  4. Interactive table row click integration to open detail sheet.
+
 
 
