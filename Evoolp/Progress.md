@@ -151,12 +151,29 @@ The following features have been implemented and verified via TypeScript checks 
      * Runtime HTTP smoke tests (`scripts/test-attendance-runtime.ts`): 16 / 16 tests passed against live server on port 3000.
      * Regression tests: 39 / 39 tests passed across Subjects, Teachers, and Students.
 
+10. **Historical Monthly Attendance Matrix, Analytics & CBSE 75% Defaulters (Module 5 — Stage 2):**
+    * **Historical / Monthly Attendance Matrix (`AttendanceMonthlyMatrix`):** Full calendar-month matrix grid rendering days 1 through $N$ with day-of-week abbreviations, weekend indicators, and interactive status codes (`P`, `A`, `L`, `E`, `H`).
+    * **No-Session Date Clarity:** Unmarked dates without sessions clearly distinguished from marked absences with neutral dashes and explanatory tooltips.
+    * **CBSE 75% Defaulter Detection (`AttendanceDefaultersCard`):** Automated calculation of effective attendance percentage ($P=1.0, L=1.0, H=0.5, A=0, E=0$) and automatic identification of students falling below the mandatory CBSE 75% examination threshold, with rich empty states for 100% compliant cohorts.
+    * **Attendance Analytics Dashboard:** Class attendance rate, total working sessions, active student count, and category/status distribution breakdown.
+    * **Student Profile Dossier Integration (`StudentDetailSheet`):** Compact Attendance Summary embedded directly into the 360-degree student slide-over sheet displaying cumulative rate %, working days, present/absent counts, CBSE compliance pill, and recent session logs.
+    * **Export & Print Ready:**
+      * RFC-4180 compliant CSV export with tenant-scoped download (`exportMonthlyAttendanceCsv`).
+      * Clean print-friendly view with official institutional report header, hidden navigation/controls, and high-contrast `@media print` styling (`window.print()`).
+    * **Multi-View Workspace (`AttendanceWorkspace`):** Instant client-side tab switching between "Daily Register" and "Monthly Matrix & Analytics" with deep-link URL parameter support (`?view=monthly`).
+    * **Quality & Test Verification:**
+      * `tsc --noEmit`: 0 TypeScript compilation errors.
+      * Stage 2 Integration test script (`scripts/test-attendance-stage2.ts`): 30 / 30 tests passed in WSL2.
+      * Stage 1 Regression test script (`scripts/test-attendance-stage1.ts`): 24 / 24 tests passed in WSL2.
+      * Full Phase 2 regression suites: 39 / 39 tests passed across Subjects (17), Teachers (13), and Students (9).
+      * Runtime HTTP smoke tests: 16 / 16 passed against live server on port 3000.
+      * Zero schema migrations needed; baseline data completely preserved.
+
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
 ### Future Phase 2 Modules
-* Module 5: Attendance Stage 2 — Historical analytics, monthly matrix, CBSE 75% defaulters, and student profile dossier integration
 * Module 6: Exams / Marks / Grades (`/dashboard/exams`, `/dashboard/my-grades`) — CBSE Assessment cycles & Marks entry
 * Module 7: Report Cards — Term Report Card generation
 
@@ -164,12 +181,12 @@ The following features have been implemented and verified via TypeScript checks 
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 2 — Module 5 — Attendance Management — Stage 2**
+* **Target:** **Phase 2 — Module 6 — Exams / Marks / Grades — Stage 1**
 * **Primary Scope:**
-  1. Historical attendance register calendar and monthly attendance matrix (days 1–31 grid).
-  2. Section and Class attendance analytics (monthly attendance %, defaulters list $< 75\%$ attendance).
-  3. Student 360-degree profile integration: Embedding attendance stats and monthly calendar in `StudentDetailSheet` (`/dashboard/students`).
-  4. Printable/Exportable attendance summary reports.
+  1. Exam and assessment cycle schema and data models (Terms, Periodic Tests, Half-Yearly, Annual Exams).
+  2. Grade scale setup and CBSE scholastic grading boundaries.
+  3. Subject-wise maximum marks, passing marks, and exam scheduling.
+
 
 
 

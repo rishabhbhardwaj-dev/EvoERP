@@ -66,3 +66,37 @@ export const getRegisterQuerySchema = z.object({
 });
 
 export type GetRegisterQueryInput = z.infer<typeof getRegisterQuerySchema>;
+
+/**
+ * Query schema for fetching monthly attendance matrix and analytics.
+ */
+export const monthlyAttendanceQuerySchema = z.object({
+  classId: z.string().min(1, "Class is required."),
+  sectionId: z.string().min(1, "Section is required."),
+  academicYear: z
+    .string()
+    .regex(/^\d{4}-\d{4}$/, "Invalid academic year format (e.g. 2025-2026).")
+    .optional(),
+  year: z.coerce.number().int().min(2000).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+});
+
+export type MonthlyAttendanceQueryInput = z.infer<
+  typeof monthlyAttendanceQuerySchema
+>;
+
+/**
+ * Query schema for fetching a single student's attendance summary.
+ */
+export const studentAttendanceSummaryQuerySchema = z.object({
+  studentId: z.string().min(1, "Student ID is required."),
+  academicYear: z
+    .string()
+    .regex(/^\d{4}-\d{4}$/, "Invalid academic year format (e.g. 2025-2026).")
+    .optional(),
+});
+
+export type StudentAttendanceSummaryQueryInput = z.infer<
+  typeof studentAttendanceSummaryQuerySchema
+>;
+

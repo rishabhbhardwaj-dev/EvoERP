@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Sheet,
   SheetContent,
@@ -26,7 +26,15 @@ import {
   ArrowRightLeft,
   RefreshCw,
   Trash2,
+  CalendarCheck,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
+import {
+  getStudentAttendanceSummary,
+  type StudentAttendanceSummaryData,
+} from "@/lib/actions/attendance";
+import { cn } from "cn";
 
 export interface StudentDetailRecord {
   id: string;
@@ -87,12 +95,52 @@ export function StudentDetailSheet({
   const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [attendanceSummary, setAttendanceSummary] =
+    useState<StudentAttendanceSummaryData | null>(null);
+  const [isLoadingAttendance, setIsLoadingAttendance] = useState<boolean>(false);
+
+  const activeEnrollment =
+    student?.enrollments.find((e) => e.status === "ACTIVE") ?? student?.enrollments[0];
+
+  // Fetch attendance summary when sheet opens or student changes
+  useEffect(() => {
+    if (!open || !student?.id) {
+      setAttendanceSummary(null);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingAttendance(true);
+
+    getStudentAttendanceSummary({
+      studentId: student.id,
+      academicYear: activeEnrollment?.academicYear,
+    })
+      .then((res) => {
+        if (isMounted) {
+          if (res.success && res.data) {
+            setAttendanceSummary(res.data);
+          } else {
+            setAttendanceSummary(null);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error("Error loading student attendance summary:", err);
+        if (isMounted) setAttendanceSummary(null);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingAttendance(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [open, student?.id, activeEnrollment?.academicYear]);
 
   if (!student) return null;
 
   const isAdmin = userRole === "ADMIN";
-  const activeEnrollment =
-    student.enrollments.find((e) => e.status === "ACTIVE") ?? student.enrollments[0];
 
   // Helper for formatting dates
   function formatDate(d: Date | string | null | undefined): string {
@@ -266,6 +314,123 @@ export function StudentDetailSheet({
               ) : (
                 <div className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
                   No active enrollment assigned.
+                </div>
+              )}
+            </div>
+
+            {/* Attendance Summary */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <CalendarCheck className="size-4 text-primary" /> Attendance Summary
+                </h3>
+                {attendanceSummary && attendanceSummary.totalSessions > 0 && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold",
+                      attendanceSummary.isDefaulter
+                        ? "bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                        : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                    )}
+                  >
+                    {attendanceSummary.isDefaulter ? (
+                      <>
+                        <AlertTriangle className="size-3" /> CBSE Defaulter (&lt;75%)
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="size-3" /> CBSE Compliant (≥75%)
+                      </>
+                    )}
+                  </span>
+                )}
+              </div>
+
+              {isLoadingAttendance ? (
+                <div className="rounded-lg border bg-card p-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Loading attendance summary…</span>
+                </div>
+              ) : !attendanceSummary || attendanceSummary.totalSessions === 0 ? (
+                <div className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
+                  No attendance records logged for this student yet.
+                </div>
+              ) : (
+                <div className="rounded-lg border bg-card p-4 shadow-xs space-y-3">
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    <div className="rounded-md bg-muted/40 p-2">
+                      <p className="text-[10px] uppercase font-semibold text-muted-foreground">
+                        Rate
+                      </p>
+                      <p
+                        className={cn(
+                          "text-lg font-bold mt-0.5",
+                          attendanceSummary.percentage >= 75
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-rose-600 dark:text-rose-400"
+                        )}
+                      >
+                        {attendanceSummary.percentage}%
+                      </p>
+                    </div>
+
+                    <div className="rounded-md bg-muted/40 p-2">
+                      <p className="text-[10px] uppercase font-semibold text-muted-foreground">
+                        Working Days
+                      </p>
+                      <p className="text-lg font-bold text-foreground mt-0.5">
+                        {attendanceSummary.totalSessions}
+                      </p>
+                    </div>
+
+                    <div className="rounded-md bg-muted/40 p-2">
+                      <p className="text-[10px] uppercase font-semibold text-emerald-700 dark:text-emerald-400">
+                        Present
+                      </p>
+                      <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                        {attendanceSummary.presentCount}
+                      </p>
+                    </div>
+
+                    <div className="rounded-md bg-muted/40 p-2">
+                      <p className="text-[10px] uppercase font-semibold text-rose-700 dark:text-rose-400">
+                        Absent
+                      </p>
+                      <p className="text-lg font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+                        {attendanceSummary.absentCount}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Recent Session Logs */}
+                  {attendanceSummary.recentSessions.length > 0 && (
+                    <div className="border-t pt-2.5">
+                      <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">
+                        Recent Logged Days:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {attendanceSummary.recentSessions.map((s, idx) => (
+                          <span
+                            key={idx}
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-mono font-medium",
+                              s.status === "PRESENT"
+                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                                : s.status === "ABSENT"
+                                ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
+                                : s.status === "LATE"
+                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                                : "bg-muted text-muted-foreground"
+                            )}
+                            title={s.remarks ? `${s.date}: ${s.remarks}` : s.date}
+                          >
+                            <span>{s.date}:</span>
+                            <strong>{s.status[0]}</strong>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

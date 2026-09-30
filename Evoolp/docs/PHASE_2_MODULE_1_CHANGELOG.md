@@ -925,13 +925,82 @@ Stage 1 implements the institutional Subject Master Catalog for EvoERP, establis
 
 ##### 6. Current Status
 * **Stage 1 (Daily Register & Multi-Tenant Bulk Marking):** **COMPLETE & FULLY VERIFIED**
-* **Stage 2 (Historical Analytics, Monthly Matrix & Student Dossier):** **PENDING (Next Target)**
-* **Next Development Target:** **Phase 2 — Module 5 — Attendance Management — Stage 2**
+* **Stage 2 (Historical Analytics, Monthly Matrix & Student Dossier):** **COMPLETE & FULLY VERIFIED**
+* **Next Development Target:** **Phase 2 — Module 6 — Exams / Marks / Grades — Stage 1**
+
+---
+
+#### Module 5 — Attendance Management — Stage 2: Historical Analytics, Monthly Matrix, CBSE 75% Defaulters & Dossier Integration
+
+##### 1. Overview
+Stage 2 extends Attendance Management from daily roll calls to institutional historical tracking, class-level analytics, CBSE attendance quota compliance, 360-degree student dossier integration, and multi-tenant reporting.
+
+##### 2. Files Created
+1. `src/components/attendance/attendance-defaulters-card.tsx`: Analytics card displaying class attendance rate %, total working days, active roster count, status distribution (P, A, L, E, H), and CBSE <75% attendance defaulters table with empty states.
+2. `src/components/attendance/attendance-monthly-matrix.tsx`: Horizontal scrolling calendar matrix component rendering days 1 through $N$ with day-of-week abbreviations, weekend styling, status codes (`P`, `A`, `L`, `E`, `H`), unrecorded day indicators (`-`), CSV download, and `@media print` official institutional layout.
+3. `src/components/attendance/attendance-workspace.tsx`: Unified tabbed workspace allowing instant client-side toggling between "Daily Register" and "Monthly Matrix & Analytics" with `?view=monthly` query parameter support.
+4. `scripts/test-attendance-stage2.ts`: Integration test suite verifying database aggregation, multi-student matrix, CBSE <75% calculation, no-session date handling, CSV export generation, RBAC, cross-tenant isolation, and data cleanup (30 / 30 tests passed).
+
+##### 3. Files Modified
+1. `src/lib/validations/attendance.ts`: Added `monthlyAttendanceQuerySchema` and `studentAttendanceSummaryQuerySchema` with inferred TypeScript types.
+2. `src/lib/actions/attendance.ts`: Added `getMonthlyAttendanceMatrix`, `getStudentAttendanceSummary`, and `exportMonthlyAttendanceCsv` server actions.
+3. `src/app/(dashboard)/dashboard/attendance/page.tsx`: Integrated `AttendanceWorkspace` with view tabs and `searchParams` deep-link support.
+4. `src/components/students/student-detail-sheet.tsx`: Integrated compact "Attendance Summary" card displaying cumulative rate %, working days, present/absent counts, CBSE compliance badge, and recent session logs.
+5. `Progress.md`: Updated Module 5 status to Stage 2 COMPLETE and aligned next target to Module 6 Stage 1.
+6. `docs/PHASE_2_MODULE_1_CHANGELOG.md`: Added technical implementation record and verification matrix for Stage 2.
+
+##### 4. Backend & Server Action Architecture
+1. **Matrix Query Aggregation (`getMonthlyAttendanceMatrix`):**
+   * Server-derived `ctx.schoolId` via `requireTenant()`.
+   * Queries all `AttendanceSession`s and `AttendanceRecord`s within UTC month boundaries.
+   * Maps sessions by UTC day of month ($1..N$). Days without a session evaluate to `status: null` rather than absent.
+   * Fetches active enrolled students for class and section.
+   * Computes effective attended days ($P=1.0, L=1.0, H=0.5, A=0, E=0$).
+   * Computes percentage: $\text{round}((\text{Attended} / \text{Working Days}) \times 100)$.
+   * Identifies defaulters where $\text{Working Days} > 0$ and $\text{Percentage} < 75\%$.
+2. **Student Cumulative Summary (`getStudentAttendanceSummary`):**
+   * Queries all attendance records for a specific student across the school year.
+   * Aggregates total sessions, present, absent, late, excused, half day, and recent 5 session logs.
+   * Feeds directly into `StudentDetailSheet` without duplicated logic.
+3. **Tenant-Scoped CSV Export (`exportMonthlyAttendanceCsv`):**
+   * Formats matrix data into RFC-4180 compliant CSV string on the server.
+   * Includes institutional metadata headers, daily code columns ($1..N$), summary counts, attendance %, and defaulter flags.
+4. **Server-Side RBAC:**
+   * Only `ADMIN` and `TEACHER` roles can access matrix and export data.
+   * Student and Parent roles are rejected with HTTP 403 / structured error.
+
+##### 5. Database Schema Impact & Migration
+* **Prisma Schema (`prisma/schema.prisma`):** **UNCHANGED.** No schema adjustments were needed.
+* **Migrations (`prisma/migrations/`):** **UNCHANGED.** 0 new migrations generated.
+* **Seed Data (`prisma/seed.ts`):** **UNCHANGED.** Existing baseline data preserved.
+* **Models Utilized:** `AttendanceSession`, `AttendanceRecord`, `Class`, `Section`, `Student`, `Enrollment`, `AuditLog`.
+
+##### 6. Testing & Verification Matrix
+
+| Test ID | Test Category | Method / Tool | Result | Verified Details |
+| :--- | :--- | :--- | :--- | :--- |
+| **ATT2-01..05** | Baseline Discovery | `scripts/test-attendance-stage2.ts` | **PASS** | Found demo school `DEMO001`, Admin, Teacher, Class 6, and Section A. |
+| **ATT2-06..07** | Roster Multi-Student | `scripts/test-attendance-stage2.ts` | **PASS** | Verified baseline student Aarav Patel and created temporary test student Priya Sharma. |
+| **ATT2-08..10** | Schema Validation | `scripts/test-attendance-stage2.ts` | **PASS** | Validated monthly query schema, invalid month rejection (>12), and student query schema. |
+| **ATT2-11..12** | Month Filtering | `scripts/test-attendance-stage2.ts` | **PASS** | August 31-day boundary calculation and empty-month 0 sessions verification. |
+| **ATT2-13..15** | Seeding & Date Mapping | `scripts/test-attendance-stage2.ts` | **PASS** | Seeded 4 April sessions; markedDates [1, 2, 3, 4] and unmarked days evaluated to null. |
+| **ATT2-16..21** | Status Aggregation | `scripts/test-attendance-stage2.ts` | **PASS** | Aarav: 2P, 1L, 1H (3.5 attended, 88%); Priya: 1P, 2A, 1E (1.0 attended, 25%). |
+| **ATT2-22..23** | CBSE 75% Defaulter | `scripts/test-attendance-stage2.ts` | **PASS** | Aarav (88% >= 75%) compliant; Priya (25% < 75%) flagged as CBSE defaulter. |
+| **ATT2-24** | Class/Section Isolation | `scripts/test-attendance-stage2.ts` | **PASS** | Non-existent section queries return 0 sessions. |
+| **ATT2-25..26** | Student Summary | `scripts/test-attendance-stage2.ts` | **PASS** | Retrieved 4 sessions and recent logs in descending date order. |
+| **ATT2-27** | RFC-4180 CSV Export | `scripts/test-attendance-stage2.ts` | **PASS** | Verified headers, student row, daily codes (P, A, E, -), %, and YES/NO defaulter flag. |
+| **ATT2-28** | Server RBAC | `scripts/test-attendance-stage2.ts` | **PASS** | Student and parent roles blocked from attendance actions. |
+| **ATT2-29..30** | Cross-Tenant Security | `scripts/test-attendance-stage2.ts` | **PASS** | Foreign school cannot view demo school sessions or student records. |
+| **ATT2-CLEANUP** | Database Safety | `scripts/test-attendance-stage2.ts` | **PASS** | All test sessions, records, temporary student, and foreign school deleted; baseline intact. |
+| **ATT1-REGRESSION** | Stage 1 Regression | `scripts/test-attendance-stage1.ts` | **PASS** | All 24 / 24 Attendance Stage 1 tests passed. |
+| **PHASE2-REGRESSION** | Phase 2 Regression | Regression suites | **PASS** | All 39 regression tests passed (Subjects: 17, Teachers: 13, Students: 9). |
+| **HTTP-SMOKE** | Live Server Smoke | Port 3000 smoke runner | **PASS** | 16 / 16 Stage 1 tests + Stage 2 monthly matrix endpoint passed. |
+| **STATIC-TYPES** | Static Type Check | `npx tsc --noEmit` in WSL | **PASS** | 0 TypeScript compilation errors across codebase. |
 
 ---
 
 ### Module 6 — Exams / Marks / Grades
-* **Status:** **NOT IMPLEMENTED**
+* **Status:** **NOT IMPLEMENTED (Next Development Target)**
 * **Planned Scope:** CBSE-aligned assessment cycles, term exams, marks entry workflows, and grading calculations (`/dashboard/exams`, `/dashboard/my-grades`).
 
 ---
@@ -939,5 +1008,6 @@ Stage 1 implements the institutional Subject Master Catalog for EvoERP, establis
 ### Module 7 — Report Cards
 * **Status:** **NOT IMPLEMENTED**
 * **Planned Scope:** Term report card generation, CBSE scholastic and co-scholastic formatting, and PDF export.
+
 
 
