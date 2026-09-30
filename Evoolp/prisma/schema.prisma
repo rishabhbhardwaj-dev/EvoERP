@@ -51,6 +51,14 @@ enum EnrollmentStatus {
   WITHDRAWN
 }
 
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+  HALF_DAY
+}
+
 // ──────────────────────────── Models ───────────────────────────
 
 model School {
@@ -72,6 +80,8 @@ model School {
   enrollments Enrollment[]
   auditLogs   AuditLog[]
   sections    Section[]
+  attendanceSessions AttendanceSession[]
+  attendanceRecords  AttendanceRecord[]
 
   @@index([status])
 }
@@ -93,6 +103,7 @@ model User {
   children       Student[] @relation("ParentUser")
   accounts       Account[]
   sessions       Session[]
+  markedAttendanceSessions AttendanceSession[] @relation("AttendanceMarker")
 
   @@unique([schoolId, email])
   @@index([schoolId])
@@ -124,6 +135,7 @@ model Student {
   user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   parent      User?        @relation("ParentUser", fields: [parentUserId], references: [id], onDelete: SetNull)
   enrollments Enrollment[]
+  attendanceRecords AttendanceRecord[]
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -160,6 +172,7 @@ model Class {
   school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   sections    Section[]
   enrollments Enrollment[]
+  attendanceSessions AttendanceSession[]
 
   @@unique([schoolId, name, academicYear])
   @@index([schoolId])
@@ -175,6 +188,7 @@ model Section {
   school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   class       Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
   enrollments Enrollment[]
+  attendanceSessions AttendanceSession[]
 
   @@unique([classId, name])
   @@index([schoolId])
@@ -234,6 +248,50 @@ model AuditLog {
   @@index([schoolId, createdAt])
   @@index([schoolId, entityType, entityId])
   @@index([userId])
+}
+
+model AttendanceSession {
+  id           String   @id @default(cuid())
+  schoolId     String
+  classId      String
+  sectionId    String
+  academicYear String
+  /// Date of attendance without time component (e.g. 2026-09-30)
+  date         DateTime @db.Date
+  markedById   String
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  school   School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  class    Class              @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section  Section            @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  markedBy User               @relation("AttendanceMarker", fields: [markedById], references: [id], onDelete: Restrict)
+  records  AttendanceRecord[]
+
+  @@unique([schoolId, classId, sectionId, date])
+  @@index([schoolId, date])
+  @@index([schoolId, academicYear])
+  @@index([classId, sectionId])
+}
+
+model AttendanceRecord {
+  id        String           @id @default(cuid())
+  schoolId  String
+  sessionId String
+  studentId String
+  status    AttendanceStatus @default(PRESENT)
+  remarks   String?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  school  School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  session AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, studentId])
+  @@index([schoolId, studentId])
+  @@index([studentId, status])
 }
 
 // ─────────────────── NextAuth (Auth.js) adapter tables ───────────────────

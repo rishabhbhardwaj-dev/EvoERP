@@ -29,7 +29,8 @@
 | **Phase 2** | Module 3 — Teachers | Stage 2 | **COMPLETE** | Profile Detail Sheet, Edit Staff, Status Deactivation, Safe Deletion, diff audit logs |
 | **Phase 2** | Module 4 — Subjects | Stage 1 | **COMPLETE** | Subject Catalog Directory, Create modal, code normalization, tenant isolation, RBAC, Audit log |
 | **Phase 2** | Module 4 — Subjects | Stage 2 | **COMPLETE** | Subject Detail Dossier, Edit modal, Safe Deletion with confirmation & snapshot |
-| **Phase 2** | Module 5 — Attendance | — | **NOT IMPLEMENTED** | Daily Student Attendance workflow |
+| **Phase 2** | Module 5 — Attendance | Stage 1 | **COMPLETE** | Daily Register, bulk marking, P/A/L/E/H states, 48h teacher guard, atomic upsert |
+| **Phase 2** | Module 5 — Attendance | Stage 2 | **NOT IMPLEMENTED** | Historical analytics, monthly matrix, CBSE 75% defaulters, student dossier integration |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | — | **NOT IMPLEMENTED** | CBSE Assessment cycles & Marks entry |
 | **Phase 2** | Module 7 — Report Cards | — | **NOT IMPLEMENTED** | Term Report Card generation |
 
@@ -132,12 +133,30 @@ The following features have been implemented and verified via TypeScript checks 
      * Integration test script (`scripts/test-subject-stage2.ts`): 17 / 17 tests passed in WSL2 (seeded retrieval, update normalization, diff audit logging, duplicate collision prevention, same-code self-update, confirmation code validation, pre-deletion snapshot, cross-tenant protection, and baseline data preservation).
      * Automated browser runtime verification: Fully verified in Chromium for both Admin (sheet inspection, edit, duplicate rejection, safe deletion with confirmation typing) and Teacher (read-only sheet, absent mutation controls, search, and sorting).
 
+9. **Daily Attendance Register & Multi-Tenant Bulk Marking (Module 5 — Stage 1):**
+   * Attendance register workspace at `/dashboard/attendance` resolving previous 404 stub with HTTP 200.
+   * Summary metric cards: Today's Overall Attendance %, Registers Marked, Pending Registers, Absentees Today.
+   * Class and Section cascading selectors with dynamic division population and date selector (Today, Yesterday, date input).
+   * Interactive student roll call table with one-click bulk status setters ("All Present", "All Absent") and individual status toggles (`PRESENT`, `ABSENT`, `LATE`, `EXCUSED`, `HALF_DAY`).
+   * Optional student remarks input (e.g. "Mild fever", "Medical leave") and section session notes.
+   * Non-destructive Prisma migration (`20260930084346_add_attendance_management`) creating `AttendanceStatus` enum, `AttendanceSession`, and `AttendanceRecord` tables.
+   * Multi-tenant composite unique constraints: `@@unique([schoolId, classId, sectionId, date])` preventing duplicate registers, and `@@unique([sessionId, studentId])` preventing duplicate student records.
+   * Atomic `prisma.$transaction` handling session upsert + record synchronization.
+   * RBAC & Historical Security: Teachers can mark/edit attendance for today and yesterday ($\le 48\text{h}$); older historical dates display a Read-Only lock banner and require an Administrator.
+   * Structured audit logging: `ATTENDANCE_MARKED` and `ATTENDANCE_UPDATED` events written to `AuditLog` table with attendance breakdown metrics.
+   * Quality & Test Verification:
+     * `tsc --noEmit`: 0 TypeScript compilation errors.
+     * `npm run build`: Clean production build; dynamic route `ƒ /dashboard/attendance` (12.6 kB).
+     * Integration test script (`scripts/test-attendance-stage1.ts`): 24 / 24 tests passed in WSL2.
+     * Runtime HTTP smoke tests (`scripts/test-attendance-runtime.ts`): 16 / 16 tests passed against live server on port 3000.
+     * Regression tests: 39 / 39 tests passed across Subjects, Teachers, and Students.
+
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
 ### Future Phase 2 Modules
-* Module 5: Attendance (`/dashboard/attendance`, `/dashboard/my-attendance`) — Daily Student Attendance workflow
+* Module 5: Attendance Stage 2 — Historical analytics, monthly matrix, CBSE 75% defaulters, and student profile dossier integration
 * Module 6: Exams / Marks / Grades (`/dashboard/exams`, `/dashboard/my-grades`) — CBSE Assessment cycles & Marks entry
 * Module 7: Report Cards — Term Report Card generation
 
@@ -145,12 +164,12 @@ The following features have been implemented and verified via TypeScript checks 
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 2 — Module 5 — Attendance Management**
+* **Target:** **Phase 2 — Module 5 — Attendance Management — Stage 2**
 * **Primary Scope:**
-  1. Attendance register directory and student attendance marking workflows (`/dashboard/attendance`).
-  2. Bulk daily attendance entry by Class & Section (Present, Absent, Late, Excused).
-  3. Strict tenant isolation, atomic transaction persistence, and date-level constraints.
-  4. Teacher attendance marking privileges and student/parent attendance views (`/dashboard/my-attendance`).
+  1. Historical attendance register calendar and monthly attendance matrix (days 1–31 grid).
+  2. Section and Class attendance analytics (monthly attendance %, defaulters list $< 75\%$ attendance).
+  3. Student 360-degree profile integration: Embedding attendance stats and monthly calendar in `StudentDetailSheet` (`/dashboard/students`).
+  4. Printable/Exportable attendance summary reports.
 
 
 

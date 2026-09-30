@@ -857,9 +857,76 @@ Stage 1 implements the institutional Subject Master Catalog for EvoERP, establis
 
 ---
 
-### Module 5 — Attendance
-* **Status:** **NOT IMPLEMENTED**
-* **Planned Scope:** Daily class attendance register, bulk attendance marking, attendance reporting, and parent view (`/dashboard/attendance`, `/dashboard/my-attendance`).
+### Module 5 — Attendance Management
+
+#### Stage 1: Daily Attendance Register & Multi-Tenant Bulk Marking
+
+##### 1. Overview & Capabilities
+1. **Attendance Register Workspace (`/dashboard/attendance`):** Resolves the previous 404 stub with HTTP 200, integrating directly into the dashboard navigation for `ADMIN` and `TEACHER` roles.
+2. **Summary Metric Cards (`AttendanceMetrics`):** Displays real-time aggregate statistics: Today's Overall Attendance Percentage, Registers Marked vs. Total Sections, Pending Registers count, and Total Absentees Today.
+3. **Cascading Class & Section Pickers:** Dynamically filters divisions when the parent class standard changes, defaulting to the first active division.
+4. **Calendar Date Control:** Standardized date picker with quick shortcuts for "Today" and "Yesterday", with upper bounds preventing future date marking.
+5. **Interactive Roll-Call Table (`AttendanceTable`):** Displays students enrolled in the selected class and section with admission numbers, names, gender indicators, one-click bulk status toggles ("All Present", "All Absent"), individual status pills (`PRESENT`, `ABSENT`, `LATE`, `EXCUSED`, `HALF_DAY`), and per-student remarks inputs.
+6. **Live Attendance Counter:** Real-time breakdown pills above the roster table displaying live counts of Present, Absent, Late, Excused, Half-Day students and the live attendance percentage rate.
+7. **Session Notes & Remarks:** Class-level session notes input capturing daily events (e.g. sports day, rainy day attendance).
+8. **Multi-Tenant Composite Unique Constraints:** Enforces `@@unique([schoolId, classId, sectionId, date])` ensuring only one daily register exists per section per calendar date, and `@@unique([sessionId, studentId])` preventing duplicate student records.
+9. **Atomic Transaction Upsert:** Uses `prisma.$transaction` to atomically upsert the `AttendanceSession` header and synchronize all student `AttendanceRecord`s in a single database round-trip.
+10. **RBAC & 48-Hour Historical Edit Guard:** Teachers are authorized to mark or edit registers for today and yesterday ($\le 48\text{h}$); older historical dates display a Read-Only lock banner and require an Administrator. Future date marking is rejected for all roles.
+11. **Structured Audit Logging:** Automatically logs `ATTENDANCE_MARKED` and `ATTENDANCE_UPDATED` events in the `AuditLog` table with aggregate attendance statistics without high-volume row bloat.
+
+##### 2. Files Created
+1. `src/lib/validations/attendance.ts`: Zod schemas `saveAttendanceRegisterSchema`, `getRegisterQuerySchema`, `attendanceStatusEnum`, and inferred TypeScript types.
+2. `src/lib/actions/attendance.ts`: Next.js Server Actions `getAttendanceRegister`, `saveAttendanceRegister`, and `getTodayAttendanceSummary` with tenant isolation, atomic transaction handling, and session audit logging.
+3. `src/components/attendance/attendance-metrics.tsx`: Summary metric cards for attendance dashboard statistics.
+4. `src/components/attendance/attendance-table.tsx`: Interactive student roll-call table with status toggle buttons, live counters, and search filtering.
+5. `src/components/attendance/attendance-register.tsx`: Client component managing class/section selection, date controls, bulk actions, submission, and advisory lock banners.
+6. `src/app/(dashboard)/dashboard/attendance/page.tsx`: Server component resolving tenant, enforcing RBAC, querying classes with sections, and rendering the attendance workspace.
+7. `scripts/test-attendance-stage1.ts`: Integration test script verifying database constraints, atomic transactions, duplicate prevention, 48h teacher guard, and audit trails in WSL2 (24 / 24 tests passed).
+8. `scripts/test-attendance-runtime.ts`: Runtime HTTP smoke test script verifying live Next.js App Router endpoints on port 3000 (16 / 16 tests passed).
+
+##### 3. Files Modified
+1. `prisma/schema.prisma`: Added `enum AttendanceStatus`, `model AttendanceSession`, and `model AttendanceRecord` with relations on `School`, `User`, `Student`, `Class`, and `Section`.
+2. `Evoolp/Progress.md`: Updated Module 5 status to Stage 1 COMPLETE and aligned next target to Stage 2.
+3. `Evoolp/docs/PHASE_2_MODULE_1_CHANGELOG.md`: Added technical implementation record and test matrix for Stage 1.
+
+##### 4. Database Schema Impact & Migration
+* **Migration Name:** `20260930084346_add_attendance_management`
+* **Changes Applied:**
+  * Created PostgreSQL enum `"AttendanceStatus"` with values: `'PRESENT'`, `'ABSENT'`, `'LATE'`, `'EXCUSED'`, `'HALF_DAY'`.
+  * Created table `"AttendanceSession"` with columns: `id`, `schoolId`, `classId`, `sectionId`, `academicYear`, `date` (`DATE`), `markedById`, `notes`, `createdAt`, `updatedAt`.
+  * Created table `"AttendanceRecord"` with columns: `id`, `schoolId`, `sessionId`, `studentId`, `status` (`AttendanceStatus`), `remarks`, `createdAt`, `updatedAt`.
+  * Created unique composite index `AttendanceSession_schoolId_classId_sectionId_date_key`.
+  * Created unique composite index `AttendanceRecord_sessionId_studentId_key`.
+  * Multi-tenant performance indexes on `[schoolId, date]`, `[schoolId, academicYear]`, `[classId, sectionId]`, `[schoolId, studentId]`, and `[studentId, status]`.
+  * Added foreign keys with `ON DELETE CASCADE` for tenant/class/section/session/student relationships, and `ON DELETE RESTRICT` for `markedById` to prevent accidental user deletion with historical attendance records.
+  * **Safety:** Zero existing tables, columns, or baseline records dropped or modified.
+
+##### 5. Testing & Verification Matrix
+
+| Test ID | Test Category | Method / Tool | Result | Verified Details |
+| :--- | :--- | :--- | :--- | :--- |
+| **ATT1-01** | Static Type Checking | `npx tsc --noEmit` in WSL | **PASS** | 0 TypeScript compilation errors across entire codebase. |
+| **ATT1-02** | Production Build | `npm run build` in WSL | **PASS** | Dynamic route `ƒ /dashboard/attendance` (12.6 kB) compiled cleanly with 0 warnings. |
+| **ATT1-03** | Tenant Discovery | `scripts/test-attendance-stage1.ts` | **PASS** | Found demo school `DEMO001`, Admin Anita Sharma, and Teacher Ravi Kumar. |
+| **ATT1-04** | Active Roster Retrieval | `scripts/test-attendance-stage1.ts` | **PASS** | Successfully queried active enrolled student Aarav Patel in Class 6 Section A. |
+| **ATT1-05** | Future Date Rejection | `scripts/test-attendance-stage1.ts` | **PASS** | Business rule flags and rejects future date marking. |
+| **ATT1-06** | Date Normalization | `scripts/test-attendance-stage1.ts` | **PASS** | Date parsed to UTC midnight matching PostgreSQL `@db.Date`. |
+| **ATT1-07** | Atomic Session Creation | `scripts/test-attendance-stage1.ts` | **PASS** | `AttendanceSession` and `AttendanceRecord`s persisted atomically in `prisma.$transaction`. |
+| **ATT1-08** | Duplicate Register Guard | `scripts/test-attendance-stage1.ts` | **PASS** | Unique constraint `[schoolId, classId, sectionId, date]` blocks duplicate session creation. |
+| **ATT1-09** | Session Upsert | `scripts/test-attendance-stage1.ts` | **PASS** | Register re-submission modifies student status without orphan or duplicate rows. |
+| **ATT1-10** | Status States Support | `scripts/test-attendance-stage1.ts` | **PASS** | `PRESENT`, `ABSENT`, `LATE`, `EXCUSED`, `HALF_DAY` statuses verified and persisted. |
+| **ATT1-11** | Teacher 48h Limit | `scripts/test-attendance-stage1.ts` | **PASS** | Teacher edits blocked for historical dates older than 48 hours. |
+| **ATT1-12** | Admin Historical Edit | `scripts/test-attendance-stage1.ts` | **PASS** | Administrator permitted to view and edit historical registers of any date. |
+| **ATT1-13** | Audit Trail Persistence | `scripts/test-attendance-stage1.ts` | **PASS** | `ATTENDANCE_MARKED` audit entry written to `AuditLog` table with session breakdown. |
+| **ATT1-14** | Cross-Tenant Security | `scripts/test-attendance-stage1.ts` | **PASS** | School A cannot query, view, or modify School B attendance sessions. |
+| **ATT1-15** | Baseline Data Preservation | `scripts/test-attendance-stage1.ts` | **PASS** | Seeded student Aarav Patel and demo classes remain completely intact. |
+| **ATT1-HTTP-01..16** | Runtime Server Smoke Tests | `scripts/test-attendance-runtime.ts` | **PASS** | All 16 live HTTP smoke tests passed on port 3000 (unauth redirect, CSRF, admin/teacher session auth, route rendering, student role block). |
+| **REGRESSION** | Regression Test Suites | WSL test runner | **PASS** | All 39 regression tests passed across Subjects (17), Teachers (13), and Students (9). |
+
+##### 6. Current Status
+* **Stage 1 (Daily Register & Multi-Tenant Bulk Marking):** **COMPLETE & FULLY VERIFIED**
+* **Stage 2 (Historical Analytics, Monthly Matrix & Student Dossier):** **PENDING (Next Target)**
+* **Next Development Target:** **Phase 2 — Module 5 — Attendance Management — Stage 2**
 
 ---
 

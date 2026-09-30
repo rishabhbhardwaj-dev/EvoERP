@@ -1,0 +1,491 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/prisma";
+import { requireTenant } from "@/lib/tenant";
+import { logAudit } from "@/lib/audit";
+import {
+  saveAttendanceRegisterSchema,
+  getRegisterQuerySchema,
+  type SaveAttendanceRegisterInput,
+  type GetRegisterQueryInput,
+  type AttendanceStatusType,
+} from "@/lib/validations/attendance";
+import type { ActionResult } from "./classes";
+import type { AttendanceStatus } from "@prisma/client";
+
+/**
+ * Normalizes a YYYY-MM-DD string to a UTC Date object matching PostgreSQL @db.Date.
+ */
+function parseDateToUtc(dateStr: string): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+/**
+ * Formats a Date object to YYYY-MM-DD in UTC.
+ */
+function formatUtcDateString(d: Date): string {
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export interface RegisterStudentRow {
+  studentId: string;
+  admissionNumber: string;
+  name: string;
+  gender: string | null;
+  status: AttendanceStatusType;
+  remarks: string;
+}
+
+export interface AttendanceRegisterData {
+  sessionId?: string;
+  isExisting: boolean;
+  classId: string;
+  className: string;
+  sectionId: string;
+  sectionName: string;
+  academicYear: string;
+  date: string;
+  notes: string;
+  markedByName?: string;
+  markedAt?: string;
+  canEdit: boolean;
+  records: RegisterStudentRow[];
+}
+
+export interface TodayAttendanceSummary {
+  totalSections: number;
+  markedSections: number;
+  unmarkedSections: number;
+  totalStudentsMarked: number;
+  totalPresent: number;
+  totalAbsent: number;
+  overallAttendancePercentage: number;
+}
+
+/**
+ * Fetches an existing attendance register or generates a fresh roll call
+ * from active student enrollments for the given class, section, and date.
+ */
+export async function getAttendanceRegister(
+  input: GetRegisterQueryInput
+): Promise<ActionResult<AttendanceRegisterData>> {
+  try {
+    const ctx = await requireTenant();
+
+    if (ctx.role !== "ADMIN" && ctx.role !== "TEACHER") {
+      return {
+        success: false,
+        error: "Unauthorized: only administrators and teachers can access attendance registers.",
+      };
+    }
+
+    const parsed = getRegisterQuerySchema.safeParse(input);
+    if (!parsed.success) {
+      const firstError = parsed.error.issues[0]?.message ?? "Invalid query.";
+      return { success: false, error: firstError };
+    }
+
+    const { classId, sectionId, date } = parsed.data;
+
+    // 1. Locate the class and section strictly within this school tenant
+    const cls = await prisma.class.findFirst({
+      where: { id: classId, schoolId: ctx.schoolId },
+      select: { id: true, name: true, academicYear: true },
+    });
+
+    if (!cls) {
+      return { success: false, error: "Class not found in your school records." };
+    }
+
+    const section = await prisma.section.findFirst({
+      where: { id: sectionId, classId, schoolId: ctx.schoolId },
+      select: { id: true, name: true },
+    });
+
+    if (!section) {
+      return { success: false, error: "Section not found in the selected class." };
+    }
+
+    const utcDate = parseDateToUtc(date);
+
+    // 2. Check teacher editing window permissions (Teachers can only edit today & yesterday)
+    let canEdit = true;
+    if (ctx.role === "TEACHER") {
+      const today = new Date();
+      const todayMidnight = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+      const targetMidnight = utcDate.getTime();
+      const diffDays = Math.floor((todayMidnight - targetMidnight) / (1000 * 60 * 60 * 24));
+      if (diffDays > 1) {
+        canEdit = false;
+      }
+    }
+
+    // 3. Check if an AttendanceSession already exists for this date
+    const existingSession = await prisma.attendanceSession.findUnique({
+      where: {
+        schoolId_classId_sectionId_date: {
+          schoolId: ctx.schoolId,
+          classId,
+          sectionId,
+          date: utcDate,
+        },
+      },
+      include: {
+        markedBy: { select: { name: true, role: true } },
+        records: {
+          include: {
+            student: {
+              select: {
+                id: true,
+                admissionNumber: true,
+                firstName: true,
+                lastName: true,
+                gender: true,
+                status: true,
+              },
+            },
+          },
+          orderBy: [
+            { student: { lastName: "asc" } },
+            { student: { firstName: "asc" } },
+          ],
+        },
+      },
+    });
+
+    if (existingSession) {
+      const records: RegisterStudentRow[] = existingSession.records.map((r) => ({
+        studentId: r.studentId,
+        admissionNumber: r.student.admissionNumber,
+        name: `${r.student.firstName} ${r.student.lastName}`.trim(),
+        gender: r.student.gender,
+        status: r.status as AttendanceStatusType,
+        remarks: r.remarks ?? "",
+      }));
+
+      return {
+        success: true,
+        data: {
+          sessionId: existingSession.id,
+          isExisting: true,
+          classId: cls.id,
+          className: cls.name,
+          sectionId: section.id,
+          sectionName: section.name,
+          academicYear: cls.academicYear,
+          date,
+          notes: existingSession.notes ?? "",
+          markedByName: existingSession.markedBy.name,
+          markedAt: existingSession.updatedAt.toISOString(),
+          canEdit,
+          records,
+        },
+      };
+    }
+
+    // 4. Session does not exist yet: Build fresh roster from active enrollments
+    const enrollments = await prisma.enrollment.findMany({
+      where: {
+        schoolId: ctx.schoolId,
+        classId,
+        sectionId,
+        status: "ACTIVE",
+        student: { status: "ACTIVE" },
+      },
+      include: {
+        student: {
+          select: {
+            id: true,
+            admissionNumber: true,
+            firstName: true,
+            lastName: true,
+            gender: true,
+          },
+        },
+      },
+      orderBy: [
+        { student: { lastName: "asc" } },
+        { student: { firstName: "asc" } },
+      ],
+    });
+
+    const records: RegisterStudentRow[] = enrollments.map((e) => ({
+      studentId: e.student.id,
+      admissionNumber: e.student.admissionNumber,
+      name: `${e.student.firstName} ${e.student.lastName}`.trim(),
+      gender: e.student.gender,
+      status: "PRESENT",
+      remarks: "",
+    }));
+
+    return {
+      success: true,
+      data: {
+        isExisting: false,
+        classId: cls.id,
+        className: cls.name,
+        sectionId: section.id,
+        sectionName: section.name,
+        academicYear: cls.academicYear,
+        date,
+        notes: "",
+        canEdit,
+        records,
+      },
+    };
+  } catch (err) {
+    console.error("Error fetching attendance register:", err);
+    return {
+      success: false,
+      error: "An unexpected error occurred while loading the attendance register.",
+    };
+  }
+}
+
+/**
+ * Saves or updates an entire daily attendance register session in an atomic transaction.
+ * Enforces tenant scoping, active student verification, teacher 48h limit, and session audit logs.
+ */
+export async function saveAttendanceRegister(
+  input: SaveAttendanceRegisterInput
+): Promise<ActionResult<{ sessionId: string }>> {
+  try {
+    const ctx = await requireTenant();
+
+    if (ctx.role !== "ADMIN" && ctx.role !== "TEACHER") {
+      return {
+        success: false,
+        error: "Unauthorized: only administrators and teachers can mark attendance.",
+      };
+    }
+
+    const parsed = saveAttendanceRegisterSchema.safeParse(input);
+    if (!parsed.success) {
+      const firstError = parsed.error.issues[0]?.message ?? "Invalid attendance data.";
+      return { success: false, error: firstError };
+    }
+
+    const { classId, sectionId, date, academicYear, notes, records } = parsed.data;
+
+    // 1. Prevent marking attendance for future dates
+    const today = new Date();
+    const todayStr = formatUtcDateString(
+      new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()))
+    );
+
+    if (date > todayStr) {
+      return {
+        success: false,
+        error: "Cannot mark attendance for a future date.",
+      };
+    }
+
+    const utcDate = parseDateToUtc(date);
+
+    // 2. Enforce Teacher 48h editing limit (Today & Yesterday only)
+    if (ctx.role === "TEACHER") {
+      const todayMidnight = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+      const targetMidnight = utcDate.getTime();
+      const diffDays = Math.floor((todayMidnight - targetMidnight) / (1000 * 60 * 60 * 24));
+      if (diffDays > 1) {
+        return {
+          success: false,
+          error: "Teachers are authorized to mark or edit attendance only for today and yesterday. Older dates require an administrator.",
+        };
+      }
+    }
+
+    // 3. Verify class and section belong to this tenant's school
+    const cls = await prisma.class.findFirst({
+      where: { id: classId, schoolId: ctx.schoolId },
+      select: { id: true, name: true },
+    });
+
+    if (!cls) {
+      return { success: false, error: "Class not found in your school records." };
+    }
+
+    const section = await prisma.section.findFirst({
+      where: { id: sectionId, classId, schoolId: ctx.schoolId },
+      select: { id: true, name: true },
+    });
+
+    if (!section) {
+      return { success: false, error: "Section not found in the selected class." };
+    }
+
+    // 4. Check if session already exists for audit action determination
+    const existing = await prisma.attendanceSession.findUnique({
+      where: {
+        schoolId_classId_sectionId_date: {
+          schoolId: ctx.schoolId,
+          classId,
+          sectionId,
+          date: utcDate,
+        },
+      },
+      select: { id: true },
+    });
+
+    const isUpdate = !!existing;
+
+    // 5. Execute atomic database transaction
+    const savedSession = await prisma.$transaction(async (tx) => {
+      // Upsert the parent AttendanceSession
+      const session = await tx.attendanceSession.upsert({
+        where: {
+          schoolId_classId_sectionId_date: {
+            schoolId: ctx.schoolId,
+            classId,
+            sectionId,
+            date: utcDate,
+          },
+        },
+        update: {
+          markedById: ctx.userId,
+          notes: notes?.trim() || null,
+          updatedAt: new Date(),
+        },
+        create: {
+          schoolId: ctx.schoolId,
+          classId,
+          sectionId,
+          academicYear,
+          date: utcDate,
+          markedById: ctx.userId,
+          notes: notes?.trim() || null,
+        },
+      });
+
+      // Synchronize attendance records: remove previous records and bulk insert new
+      await tx.attendanceRecord.deleteMany({
+        where: { sessionId: session.id },
+      });
+
+      await tx.attendanceRecord.createMany({
+        data: records.map((r) => ({
+          schoolId: ctx.schoolId,
+          sessionId: session.id,
+          studentId: r.studentId,
+          status: r.status as AttendanceStatus,
+          remarks: r.remarks?.trim() || null,
+        })),
+      });
+
+      return session;
+    });
+
+    // 6. Calculate summary counts for audit log
+    let presentCount = 0;
+    let absentCount = 0;
+    let lateCount = 0;
+    let excusedCount = 0;
+    let halfDayCount = 0;
+
+    for (const r of records) {
+      if (r.status === "PRESENT") presentCount++;
+      else if (r.status === "ABSENT") absentCount++;
+      else if (r.status === "LATE") lateCount++;
+      else if (r.status === "EXCUSED") excusedCount++;
+      else if (r.status === "HALF_DAY") halfDayCount++;
+    }
+
+    // 7. Write structured audit log at the session register level
+    await logAudit(ctx.schoolId, {
+      userId: ctx.userId,
+      action: isUpdate ? "ATTENDANCE_UPDATED" : "ATTENDANCE_MARKED",
+      entityType: "ATTENDANCE_SESSION",
+      entityId: savedSession.id,
+      newValues: {
+        className: cls.name,
+        sectionName: section.name,
+        date,
+        academicYear,
+        totalStudents: records.length,
+        presentCount,
+        absentCount,
+        lateCount,
+        excusedCount,
+        halfDayCount,
+        notes: notes?.trim() || null,
+      },
+    });
+
+    // 8. Revalidate dashboard routes
+    revalidatePath("/dashboard/attendance");
+
+    return { success: true, data: { sessionId: savedSession.id } };
+  } catch (err) {
+    console.error("Error saving attendance register:", err);
+    return {
+      success: false,
+      error: "An unexpected error occurred while saving the attendance register.",
+    };
+  }
+}
+
+/**
+ * Returns summary attendance metrics for today for the school dashboard.
+ */
+export async function getTodayAttendanceSummary(): Promise<TodayAttendanceSummary> {
+  const ctx = await requireTenant();
+
+  const today = new Date();
+  const utcToday = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+
+  // Count total active sections in this school
+  const totalSections = await prisma.section.count({
+    where: { schoolId: ctx.schoolId },
+  });
+
+  // Fetch all sessions marked for today in this school
+  const todaySessions = await prisma.attendanceSession.findMany({
+    where: {
+      schoolId: ctx.schoolId,
+      date: utcToday,
+    },
+    include: {
+      records: {
+        select: { status: true },
+      },
+    },
+  });
+
+  const markedSections = todaySessions.length;
+  const unmarkedSections = Math.max(0, totalSections - markedSections);
+
+  let totalStudentsMarked = 0;
+  let totalPresent = 0;
+  let totalAbsent = 0;
+
+  for (const session of todaySessions) {
+    for (const record of session.records) {
+      totalStudentsMarked++;
+      if (record.status === "PRESENT" || record.status === "LATE") {
+        totalPresent++;
+      } else if (record.status === "ABSENT") {
+        totalAbsent++;
+      }
+    }
+  }
+
+  const overallAttendancePercentage =
+    totalStudentsMarked > 0
+      ? Math.round((totalPresent / totalStudentsMarked) * 100)
+      : 0;
+
+  return {
+    totalSections,
+    markedSections,
+    unmarkedSections,
+    totalStudentsMarked,
+    totalPresent,
+    totalAbsent,
+    overallAttendancePercentage,
+  };
+}
