@@ -1000,8 +1000,85 @@ Stage 2 extends Attendance Management from daily roll calls to institutional his
 ---
 
 ### Module 6 — Exams / Marks / Grades
-* **Status:** **NOT IMPLEMENTED (Next Development Target)**
-* **Planned Scope:** CBSE-aligned assessment cycles, term exams, marks entry workflows, and grading calculations (`/dashboard/exams`, `/dashboard/my-grades`).
+
+#### Stage 1: Assessment Cycles, CBSE Scholastic Grading, Roll-Call Marks Entry & Audit Trail
+
+##### 1. Overview
+Stage 1 establishes the institutional examination and evaluation subsystem of EvoERP. It introduces multi-tenant exam configuration, CBSE 8-tier scholastic grading, roll-call student marks entry with atomic database transactions, zero-result deletion safeguards, and privacy-preserving security audit logging.
+
+##### 2. Files Created
+1. `prisma/migrations/20261001060815_add_exam_management/migration.sql`: DDL migration introducing `ExamType` and `GradeLabel` enums, `Exam` and `ExamResult` tables, composite indexes, foreign key constraints, and compound unique keys.
+2. `src/lib/validations/exam.ts`: Zod v4 schemas for exam creation (`createExamSchema` with `passingMarks <= maxMarks` refinement), exam updates (`updateExamSchema`), marks entry (`saveExamResultsSchema`), and section/detail queries (`getExamsQuerySchema`, `getExamDetailQuerySchema`).
+3. `src/lib/actions/exams.ts`: Server actions managing exam definitions (`createExam`, `updateExam`, `deleteExam`), read operations (`getExamsForSection`, `getExamDetail`), atomic upsert of marks (`saveExamResults`), and CBSE grade computation (`computeGrade`).
+4. `src/components/exams/create-exam-dialog.tsx`: Modal dialog for creating exams with native select controls, reactive section filtering, and Zod resolver.
+5. `src/components/exams/delete-exam-dialog.tsx`: Deletion confirmation dialog enforcing a hard block if marks records exist.
+6. `src/components/exams/exam-list-table.tsx`: Examination catalog table with search filtering, exam type badge styling, status indicators, and role-based action buttons.
+7. `src/components/exams/exam-workspace.tsx`: Unified class and section filtering workspace fetching exam lists dynamically via server actions.
+8. `src/components/exams/exam-result-entry.tsx`: Student roll-call marks entry table with live percentage/grade preview, pass/fail status, optional remarks, and atomic batch save.
+9. `src/app/(dashboard)/dashboard/exams/page.tsx`: Server component dashboard route rendering 4 KPI summary cards (Total Exams, Marks Entered, Pending Entry, Overall Pass Rate), creation dialog, and workspace.
+10. `src/app/(dashboard)/dashboard/exams/[examId]/page.tsx`: Dynamic exam detail route with metadata generation, back navigation, exam overview header, and roll-call marks entry sheet.
+11. `scripts/test-exam-stage1.ts`: Comprehensive integration test suite verifying schema baseline, validation, CRUD, marks entry, CBSE grade scale calculations, RBAC, tenant isolation, duplicate protection, audit trail, delete guard, and data preservation (54 / 54 test assertions passed).
+
+##### 3. Files Modified
+1. `prisma/schema.prisma`: Added `ExamType` enum (4 values), `GradeLabel` enum (8 values), `Exam` model, `ExamResult` model, and relations to `School`, `Class`, `Section`, `Subject`, `User`, and `Student`.
+2. `Progress.md`: Updated Module 6 Stage 1 to COMPLETE, added verified feature summary, updated future scope, and aligned next target to Module 6 Stage 2.
+3. `docs/PHASE_2_MODULE_1_CHANGELOG.md`: Added technical implementation record and verification matrix for Module 6 Stage 1.
+
+##### 4. Backend & Server Action Architecture
+1. **Multi-Tenant Schema & Relational Integrity:**
+   * `Exam`: Linked to `School`, `Class`, `Section`, `Subject`, and `User` (creator). Protected by compound unique index `[schoolId, classId, sectionId, subjectId, academicYear, name]`.
+   * `ExamResult`: Linked to `School`, `Exam`, `Student`, and `User` (marker). Protected by compound unique index `[examId, studentId]`.
+   * Decimal fields: `maxMarks` (Decimal 6,2), `passingMarks` (Decimal 6,2), `marksObtained` (Decimal 6,2), and `percentage` (Decimal 5,2).
+2. **CBSE 8-Tier Scholastic Grading Scale:**
+   * Pure deterministic computation:
+     * A1: 91.00% – 100.00%
+     * A2: 81.00% – 90.99%
+     * B1: 71.00% – 80.99%
+     * B2: 61.00% – 70.99%
+     * C1: 51.00% – 60.99%
+     * C2: 41.00% – 50.99%
+     * D: 33.00% – 40.99%
+     * E: < 33.00%
+   * Evaluated strictly on the server during marks save.
+3. **RBAC & Authorization Matrix:**
+   * `ADMIN`: Full authority to create, edit, delete exams, and enter/edit marks.
+   * `TEACHER`: Read-only access to exam lists and full authority to enter/edit marks. Blocked from exam creation, editing, and deletion.
+   * `STUDENT` & `PARENT`: Blocked at page route level with redirect to `/dashboard`.
+4. **Data Integrity & Guards:**
+   * Deletion Guard: `deleteExam` verifies `results.count === 0`. If any marks record exists, deletion is rejected.
+   * Pre-Deletion Audit Snapshot: Complete exam snapshot is recorded in `AuditLog` prior to removal.
+   * Enrollment Guard: `saveExamResults` validates each `studentId` has an `ACTIVE` enrollment in the exam's class and section for that academic year.
+   * Marks Boundary: Validates $0 \le \text{marksObtained} \le \text{maxMarks}$.
+   * Atomic Upsert Transaction: Marks entries are upserted within a single `prisma.$transaction`.
+5. **Privacy-Preserving Audit Trail:**
+   * `EXAM_CREATED`: Logs exam configuration metadata.
+   * `EXAM_UPDATED`: Logs field-level diffs via `diffChanges()`.
+   * `EXAM_DELETED`: Logs complete pre-deletion snapshot.
+   * `EXAM_RESULTS_SAVED`: Logs aggregate metrics only (`totalStudents`, `resultCount`, `passingCount`, `failingCount`, `averagePercentage`). Never stores individual student marks in audit trail logs.
+
+##### 5. Testing & Verification Matrix
+
+| Test ID | Test Category | Method / Tool | Result | Verified Details |
+| :--- | :--- | :--- | :--- | :--- |
+| **EX1-01..06** | Schema & Baseline | `scripts/test-exam-stage1.ts` | **PASS** | Verified demo school `DEMO001`, Admin, Teacher, Class 6, Section A, Subject MATH6, and Student Aarav Patel. |
+| **EX1-07..13** | Validation Schemas | `scripts/test-exam-stage1.ts` | **PASS** | Validated name requirements, academic year regex, positive marks, passing <= maxMarks refine, negative marks rejection, and 0 marks lower boundary. |
+| **EX1-14..17** | CRUD Operations | `scripts/test-exam-stage1.ts` | **PASS** | Created exam, verified all fields in database, updated name & notes, verified diff changes. |
+| **EX1-18..20** | Marks Entry & Boundaries | `scripts/test-exam-stage1.ts` | **PASS** | Tested 20/25 (80%, B1, Pass), 0/25 (0%, E, Fail), 25/25 (100%, A1, Pass). |
+| **EX1-21..27** | CBSE Grade Scale | `scripts/test-exam-stage1.ts` | **PASS** | Validated boundaries: 100% (A1), 91% (A1), 90% (A2), 33% (D), 32.99% (E), 0% (E), 74% (B1). |
+| **EX1-28..31** | Server-Side RBAC | `scripts/test-exam-stage1.ts` | **PASS** | ADMIN creates exams, TEACHER role blocked from creation, ADMIN deletes empty exam, TEACHER enters marks. |
+| **EX1-32..33** | Tenant Isolation | `scripts/test-exam-stage1.ts` | **PASS** | Foreign school cannot view exams or exam results from demo school. |
+| **EX1-34..35** | Duplicate Protection | `scripts/test-exam-stage1.ts` | **PASS** | Duplicate exam name throws unique constraint error; duplicate marks row handled via upsert. |
+| **EX1-36..38** | Marks Validation | `scripts/test-exam-stage1.ts` | **PASS** | Detected marks > maxMarks, rejected negative marks, rejected non-enrolled students. |
+| **EX1-39..42** | Audit Trail & Privacy | `scripts/test-exam-stage1.ts` | **PASS** | Verified `EXAM_CREATED`, `EXAM_RESULTS_SAVED` aggregate-only logging (no per-student marks logged). |
+| **EX1-43** | Delete Guard | `scripts/test-exam-stage1.ts` | **PASS** | Exam with results blocked from deletion. |
+| **EX1-44..49** | Database Cleanup & Baseline | `scripts/test-exam-stage1.ts` | **PASS** | All test records and foreign school removed; baseline demo data 100% intact. |
+| **REGRESSION** | Phase 2 Regression | WSL test runner | **PASS** | Attendance S2 (30/30), Attendance S1 (24/24), Subjects S2 (17/17), Teachers S2 (13/13), Students S2 (All pass). |
+| **STATIC-TYPES** | Static Type Check | `npx tsc --noEmit` | **PASS** | 0 TypeScript errors across entire workspace. |
+
+##### 6. Current Status
+* **Stage 1 (Assessment Cycles, CBSE Grading & Roll-Call Marks Entry):** **COMPLETE & FULLY VERIFIED**
+* **Stage 2 (Student/Parent Portals, Term Aggregation, Dossier Tab & Exports):** **NOT IMPLEMENTED (Next Target)**
+* **Next Development Target:** **Phase 2 — Module 6 — Exams / Marks / Grades — Stage 2**
 
 ---
 

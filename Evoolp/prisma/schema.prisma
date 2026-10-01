@@ -59,6 +59,26 @@ enum AttendanceStatus {
   HALF_DAY
 }
 
+/// CBSE / Indian school examination types.
+enum ExamType {
+  PERIODIC_TEST
+  HALF_YEARLY
+  ANNUAL
+  PRACTICE
+}
+
+/// CBSE scholastic grade labels (A1 = 91-100%, E = below 33%).
+enum GradeLabel {
+  A1
+  A2
+  B1
+  B2
+  C1
+  C2
+  D
+  E
+}
+
 // ──────────────────────────── Models ───────────────────────────
 
 model School {
@@ -72,16 +92,18 @@ model School {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
-  users       User[]
-  students    Student[]
-  teachers    Teacher[]
-  classes     Class[]
-  subjects    Subject[]
-  enrollments Enrollment[]
-  auditLogs   AuditLog[]
-  sections    Section[]
+  users              User[]
+  students           Student[]
+  teachers           Teacher[]
+  classes            Class[]
+  subjects           Subject[]
+  enrollments        Enrollment[]
+  auditLogs          AuditLog[]
+  sections           Section[]
   attendanceSessions AttendanceSession[]
   attendanceRecords  AttendanceRecord[]
+  exams              Exam[]
+  examResults        ExamResult[]
 
   @@index([status])
 }
@@ -97,13 +119,15 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  school         School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  teacherProfile Teacher?
-  studentProfile Student?
-  children       Student[] @relation("ParentUser")
-  accounts       Account[]
-  sessions       Session[]
+  school                   School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacherProfile           Teacher?
+  studentProfile           Student?
+  children                 Student[]           @relation("ParentUser")
+  accounts                 Account[]
+  sessions                 Session[]
   markedAttendanceSessions AttendanceSession[] @relation("AttendanceMarker")
+  createdExams             Exam[]              @relation("ExamCreator")
+  enteredResults           ExamResult[]        @relation("ResultEnteredBy")
 
   @@unique([schoolId, email])
   @@index([schoolId])
@@ -131,11 +155,12 @@ model Student {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
-  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
-  parent      User?        @relation("ParentUser", fields: [parentUserId], references: [id], onDelete: SetNull)
-  enrollments Enrollment[]
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user              User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  parent            User?             @relation("ParentUser", fields: [parentUserId], references: [id], onDelete: SetNull)
+  enrollments       Enrollment[]
   attendanceRecords AttendanceRecord[]
+  examResults       ExamResult[]
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -164,15 +189,16 @@ model Class {
   id           String   @id @default(cuid())
   schoolId     String
   name         String
-  /// Academic year (Indian, Apr–Mar), e.g. "2025-2026".
+  /// Academic year (Indian, Apr-Mar), e.g. "2025-2026".
   academicYear String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  sections    Section[]
-  enrollments Enrollment[]
+  school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sections           Section[]
+  enrollments        Enrollment[]
   attendanceSessions AttendanceSession[]
+  exams              Exam[]
 
   @@unique([schoolId, name, academicYear])
   @@index([schoolId])
@@ -185,10 +211,11 @@ model Section {
   classId  String
   name     String
 
-  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  class       Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
-  enrollments Enrollment[]
+  school             School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  class              Class               @relation(fields: [classId], references: [id], onDelete: Cascade)
+  enrollments        Enrollment[]
   attendanceSessions AttendanceSession[]
+  exams              Exam[]
 
   @@unique([classId, name])
   @@index([schoolId])
@@ -204,6 +231,7 @@ model Subject {
   updatedAt DateTime @updatedAt
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  exams  Exam[]
 
   @@unique([schoolId, code])
   @@index([schoolId])
@@ -263,10 +291,10 @@ model AttendanceSession {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  school   School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  class    Class              @relation(fields: [classId], references: [id], onDelete: Cascade)
-  section  Section            @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  markedBy User               @relation("AttendanceMarker", fields: [markedById], references: [id], onDelete: Restrict)
+  school   School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  class    Class             @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section  Section           @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  markedBy User              @relation("AttendanceMarker", fields: [markedById], references: [id], onDelete: Restrict)
   records  AttendanceRecord[]
 
   @@unique([schoolId, classId, sectionId, date])
@@ -292,6 +320,76 @@ model AttendanceRecord {
   @@unique([sessionId, studentId])
   @@index([schoolId, studentId])
   @@index([studentId, status])
+}
+
+/// Exam definition created by ADMIN for a specific class/section/subject/academic year.
+model Exam {
+  id           String    @id @default(cuid())
+  schoolId     String
+  classId      String
+  sectionId    String
+  subjectId    String
+  academicYear String
+  /// Human-readable exam name, e.g. "Periodic Test 1 - Mathematics".
+  name         String
+  examType     ExamType
+  /// Maximum marks for this exam (Decimal for fractional support, e.g. 25.00, 80.00).
+  maxMarks     Decimal   @db.Decimal(6, 2)
+  /// Minimum passing marks (admin-entered; must be > 0 and <= maxMarks).
+  passingMarks Decimal   @db.Decimal(6, 2)
+  /// Optional scheduled exam date (date only, no time).
+  examDate     DateTime? @db.Date
+  notes        String?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  school    School       @relation(fields: [schoolId],  references: [id], onDelete: Cascade)
+  class     Class        @relation(fields: [classId],   references: [id], onDelete: Cascade)
+  section   Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject   Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdBy User         @relation("ExamCreator",       fields: [createdById], references: [id], onDelete: Restrict)
+  results   ExamResult[]
+
+  /// Prevents duplicate exam names within the same class/section/subject/year per school.
+  @@unique([schoolId, classId, sectionId, subjectId, academicYear, name])
+  @@index([schoolId])
+  @@index([schoolId, academicYear])
+  @@index([schoolId, classId, sectionId])
+  @@index([subjectId])
+}
+
+/// Per-student result for a specific Exam. One row per student per exam (upsert-safe).
+model ExamResult {
+  id            String     @id @default(cuid())
+  schoolId      String
+  examId        String
+  studentId     String
+  /// Raw marks entered by ADMIN or TEACHER (0 .. exam.maxMarks).
+  marksObtained Decimal    @db.Decimal(6, 2)
+  /// Computed server-side: round((marksObtained / maxMarks) * 100, 2).
+  percentage    Decimal    @db.Decimal(5, 2)
+  /// Computed server-side CBSE grade label.
+  grade         GradeLabel
+  /// True when marksObtained >= exam.passingMarks (computed server-side).
+  isPassing     Boolean
+  remarks       String?
+  /// User who last entered or edited these marks.
+  enteredById   String
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  school    School  @relation(fields: [schoolId],  references: [id], onDelete: Cascade)
+  exam      Exam    @relation(fields: [examId],     references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId],  references: [id], onDelete: Cascade)
+  enteredBy User    @relation("ResultEnteredBy",    fields: [enteredById], references: [id], onDelete: Restrict)
+
+  /// One result per student per exam.
+  @@unique([examId, studentId])
+  @@index([schoolId])
+  @@index([schoolId, examId])
+  @@index([schoolId, studentId])
+  @@index([studentId, grade])
 }
 
 // ─────────────────── NextAuth (Auth.js) adapter tables ───────────────────

@@ -31,7 +31,8 @@
 | **Phase 2** | Module 4 — Subjects | Stage 2 | **COMPLETE** | Subject Detail Dossier, Edit modal, Safe Deletion with confirmation & snapshot |
 | **Phase 2** | Module 5 — Attendance | Stage 1 | **COMPLETE** | Daily Register, bulk marking, P/A/L/E/H states, 48h teacher guard, atomic upsert |
 | **Phase 2** | Module 5 — Attendance | Stage 2 | **COMPLETE** | Monthly matrix, CBSE 75% defaulters card, attendance workspace, CSV export, student dossier integration |
-| **Phase 2** | Module 6 — Exams / Marks / Grades | — | **NOT IMPLEMENTED** | CBSE Assessment cycles & Marks entry |
+| **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 1 | **COMPLETE** | Exam lifecycle, CBSE 8-tier grading, roll-call marks entry, zero-result delete guard, audit logging |
+| **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 2 | **NOT IMPLEMENTED** | Student/Parent grade portal, term aggregation, report card feeds |
 | **Phase 2** | Module 7 — Report Cards | — | **NOT IMPLEMENTED** | Term Report Card generation |
 
 ---
@@ -169,23 +170,50 @@ The following features have been implemented and verified via TypeScript checks 
       * Runtime HTTP smoke tests: 16 / 16 passed against live server on port 3000.
       * Zero schema migrations needed; baseline data completely preserved.
 
+11. **Exams / Marks / Grades Lifecycle & Assessment (Module 6 — Stage 1):**
+    * **Multi-Tenant Exam Schema (`Exam` & `ExamResult`):**
+      * `ExamType` enum (`PERIODIC_TEST`, `HALF_YEARLY`, `ANNUAL`, `PRACTICE`) and CBSE 8-tier `GradeLabel` enum (`A1`, `A2`, `B1`, `B2`, `C1`, `C2`, `D`, `E`).
+      * Decimal precision (`Decimal(6,2)`) for `maxMarks`, `passingMarks`, and `marksObtained`.
+      * Composite tenant indexing and unique compound constraint on `(schoolId, classId, sectionId, subjectId, academicYear, name)`.
+      * Unique constraint on `(examId, studentId)` for atomic upsert of student marks.
+    * **CBSE Scholastic Grade Scale:**
+      * Server-side computation: A1 (91–100%), A2 (81–90%), B1 (71–80%), B2 (61–70%), C1 (51–60%), C2 (41–50%), D (33–40%), E (<33%).
+      * Automated `percentage` rounding and `isPassing` evaluation against administrator-configured `passingMarks`.
+    * **Server Actions & Mutations (`src/lib/actions/exams.ts`):**
+      * `createExam`: ADMIN only; enforces `passingMarks <= maxMarks`, validates class/section/subject ownership, duplicate exam name protection, logs `EXAM_CREATED`.
+      * `updateExam`: ADMIN only; allows updating name, examDate, notes; logs `EXAM_UPDATED` with field-level diffs.
+      * `deleteExam`: ADMIN only; hard delete protected by zero-result guard; captures complete pre-deletion security snapshot in `EXAM_DELETED` audit log.
+      * `getExamsForSection` & `getExamDetail`: Accessible by ADMIN and TEACHER roles with tenant isolation.
+      * `saveExamResults`: Accessible by ADMIN and TEACHER; validates active enrollments; atomic transaction upsert; privacy-preserving aggregate audit logging (`EXAM_RESULTS_SAVED`).
+    * **UI Pages & Components:**
+      * `/dashboard/exams`: 4 KPI summary cards (Total Exams, Marks Entered, Pending Entry, Overall Pass Rate), Class/Section workspace switcher, client-side search & exam type filters.
+      * `/dashboard/exams/[examId]`: Roll-call marks entry table, real-time client preview of percentage/grade/status, optional remarks, and atomic save.
+      * `CreateExamDialog` & `DeleteExamDialog`: Role-gated modals adhering strictly to project design system (native selects, `DialogTrigger` with `render` prop).
+    * **Quality & Test Verification:**
+      * `tsc --noEmit`: 0 TypeScript compilation errors.
+      * Migration `20261001060815_add_exam_management` applied and verified.
+      * Stage 1 Integration test script (`scripts/test-exam-stage1.ts`): 54 / 54 test assertions passed in WSL2.
+      * Phase 2 Regression suites: Attendance Stage 2 (30/30), Attendance Stage 1 (24/24), Subjects Stage 2 (17/17), Teachers Stage 2 (13/13), Students Stage 2 (All pass).
+      * Baseline demo data (DEMO001, Aarav Patel, Class 6, Section A, Mathematics) completely preserved with zero dangling test records.
+
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
 ### Future Phase 2 Modules
-* Module 6: Exams / Marks / Grades (`/dashboard/exams`, `/dashboard/my-grades`) — CBSE Assessment cycles & Marks entry
+* Module 6: Exams / Marks / Grades — Stage 2 (`/dashboard/my-grades`, parent portal, term aggregation, report card feeds)
 * Module 7: Report Cards — Term Report Card generation
 
 ---
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 2 — Module 6 — Exams / Marks / Grades — Stage 1**
+* **Target:** **Phase 2 — Module 6 — Exams / Marks / Grades — Stage 2**
 * **Primary Scope:**
-  1. Exam and assessment cycle schema and data models (Terms, Periodic Tests, Half-Yearly, Annual Exams).
-  2. Grade scale setup and CBSE scholastic grading boundaries.
-  3. Subject-wise maximum marks, passing marks, and exam scheduling.
+  1. Student / Parent grade view (`/dashboard/my-grades`).
+  2. Term marks aggregation, grade point averages, and class rank computations.
+  3. Student dossier (`StudentDetailSheet`) academic marks & grade tab integration.
+  4. CSV / printable exam report exports.
 
 
 
