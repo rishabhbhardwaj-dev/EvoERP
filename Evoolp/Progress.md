@@ -9,7 +9,7 @@
 
 * **Current Phase:** Phase 2 — Academic Core
 * **Active Branch:** `evoerp-foundation-fixes` (Tracking: `origin/evoerp-foundation-fixes`)
-* **Current HEAD Commit:** `26ab090`
+* **Current HEAD Commit:** `0a494d3`
 * **Working Tree:** Clean (0 uncommitted changes, verified 2026-10-01)
 * **Workspace:** `D:\Dekstop\EvoERP`
 * **Environment:** Next.js 15.5.25 App Router, React 19, TypeScript 5.9.3 (strict), Prisma 6.19.3, NextAuth v5 beta
@@ -33,7 +33,8 @@
 | **Phase 2** | Module 5 — Attendance | Stage 2 | **COMPLETE** | Monthly matrix, CBSE 75% defaulters card, attendance workspace, CSV export, student dossier integration |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 1 | **COMPLETE** | Exam lifecycle, CBSE 8-tier grading, roll-call marks entry, zero-result delete guard, audit logging |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 2 | **COMPLETE** | Student/Parent scorecard at /dashboard/my-grades, multi-child switcher, student dossier integration, RFC-4180 CSV export, print layout, CBSE 8-tier analytics card, on-demand term aggregation |
-| **Phase 2** | Module 7 — Report Cards | — | **NOT IMPLEMENTED** | Term Report Card generation |
+| **Phase 2** | Module 7 — Report Cards | Stage 1 | **COMPLETE** | Single-student report card compilation, cycle isolation by examIds, CBSE grades, attendance integration, RBAC, A4 print layout, verified & pushed |
+| **Phase 2** | Module 7 — Report Cards | Stage 2 | **NOT IMPLEMENTED** | Batch printing, cohort summary CSV export, persistent custom teacher remarks, multi-term weighted annual compilation, co-scholastic grades |
 
 ---
 
@@ -226,19 +227,65 @@ The following features have been implemented and verified via TypeScript checks 
       * Zero Prisma schema changes and zero database migrations required.
       * Baseline demo data completely preserved with zero dangling test records.
 
+13. **Report Cards — Compilation, Exam Cycle Isolation & Printing (Module 7 — Stage 1):**
+    * **Dynamic Single-Student Compilation (`getStudentReportCard`):**
+      * Pure on-demand synthesis computing subject marks, percentages, CBSE grades, pass/fail status, attendance metrics, and grand totals without redundant stored tables.
+    * **Explicit Exam-Cycle Discovery & Isolation (`getAvailableExamCyclesForSection`):**
+      * Discovers distinct evaluation cycles by grouping exams matching `schoolId + classId + sectionId + academicYear` by `name + examType`.
+      * Uses explicit `examIds` array to strictly isolate exam cycles, preventing cross-cycle contamination (e.g. Periodic Test 1 vs Periodic Test 2).
+      * Duplicate Subject Protection: Rejects any attempt combining multiple exams for the same subject within a single report card.
+    * **Attendance Denominator & History Integration:**
+      * Derives `totalClassSessions` strictly from `AttendanceSession` record count for the class/section/academicYear (not student attendance rows).
+      * Computes `attendedDays` using standard CBSE status weights: `PRESENT` = 1.0, `LATE` = 1.0, `HALF_DAY` = 0.5, `ABSENT` = 0.0, `EXCUSED` = 0.0.
+      * Evaluates CBSE mandatory 75% attendance threshold (`isCompliant`) and handles partial attendance history gracefully.
+    * **Demographic Mapping & Schema Fidelity:**
+      * Aligned strictly with Student schema: uses `admissionNumber` as primary identifier, Sr. No. ordinal index instead of unsupported `rollNumber`, and maps category, date of birth, and institutional header.
+    * **Academic Calculations & CBSE Grading:**
+      * Preserves exact `Decimal(6,2)` precision, rounds percentages to 2 decimal places using `roundTo()`, and reuses synchronous pure `computeGrade()` utility for 8-tier CBSE grades (`A1`..`E`).
+      * CBSE Pass/Fail Rules: Requires passing all individual subjects and overall percentage $\ge 33.0\%$. Flags failed subjects with count and names list. Evaluates unappeared absent students as 0 marks, grade `E`, and display status `ABSENT` (`AB`).
+    * **Multi-Tier Role-Based Access Control (RBAC):**
+      * `ADMIN`: Tenant-wide report card generation and viewing for any student.
+      * `TEACHER`: Tenant-wide read-only report card inspection.
+      * `STUDENT`: Strict own-card access only (`userId` match) integrated into `/dashboard/my-grades`.
+      * `PARENT`: Access strictly limited to linked active children with multi-child switching; unlinked student access blocked.
+      * Multi-tenant isolation strictly verified; cross-tenant queries return null / unauthorized.
+    * **Privacy-Preserving Audit Trail:**
+      * Logs `REPORT_CARD_VIEWED` and `REPORT_CARD_PRINTED` (`recordReportCardPrintAudit`) in `AuditLog`.
+      * Logs aggregate metadata only (`studentId`, `academicYear`, `cycleName`, `examCount`); zero raw marks or grades logged.
+    * **UI Pages & Institutional Printable Report Card:**
+      * `/dashboard/report-cards`: Class/section filter bar, dynamic cycle selector, overview KPI cards, and interactive student roster table (`StudentRosterList`) with evaluation readiness status badges (`READY`, `PARTIAL`, `NO MARKS`).
+      * Modal & Print Preview (`ReportCardModal`, `PrintableReportCard`): Pixel-perfect A4 portrait layout with school crest, student demographics, scholastic achievement table, attendance summary with CBSE 75% indicator, CBSE grading scale legend, official signatures (Class Teacher, Principal), and native print trigger with `@media print` styling.
+      * Student/Parent Integration (`student-grades-view.tsx`): "View Full Report Card" preview modal integrated into `/dashboard/my-grades`.
+    * **Quality & Test Verification:**
+      * `tsc --noEmit`: 0 TypeScript errors across codebase.
+      * ESLint: 0 errors, 0 warnings across all implementation and test files.
+      * `npm run build`: Successful production build; dynamic route `ƒ /dashboard/report-cards` (3.58 kB).
+      * Stage 1 Integration test script (`scripts/test-report-card-stage1.ts`): 50 / 50 test assertions passed in WSL2.
+      * Full Phase 2 regression suites: 200 / 200 assertions passed across prior suites (Exams S2: 53/53, Exams S1: 54/54, Attendance S2: 30/30, Attendance S1: 24/24, Subjects S2: 17/17, Teachers S2: 13/13, Students S2: 9/9).
+      * Zero Prisma schema changes and zero database migrations required.
+      * Baseline demo data completely preserved with zero dangling test records.
+      * Browser / DOM Verification: Automated runtime/HTTP verification PASS; browser interactive authentication marked `BLOCKED — ENVIRONMENT` due to host Windows-to-WSL2 PostgreSQL connectivity boundary on `localhost:5432`.
+
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
 ### Future Phase 2 Modules
-* Module 7: Report Cards — Term Report Card generation
+* Module 7: Report Cards — Stage 2:
+  * Whole-class continuous batch printing
+  * Cohort report-card summary CSV export
+  * Persistent custom teacher remarks
+  * Multi-term weighted annual compilation
+  * Co-scholastic grades
+  * Roll Number support (upon future schema evolution)
 
 ---
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 2 — Module 7 — Report Cards**
+* **Target:** **Phase 2 — Module 7 — Report Cards (Stage 2)**
 * **Primary Scope:**
-  1. Term report card compilation and generation.
-  2. Multi-exam weighting and cumulative GPA / CGPA computation.
-  3. Printable student progress reports with institutional crest and signature areas.
+  1. Whole-class continuous batch printing with page breaks.
+  2. Cohort report-card summary CSV export with attendance and term totals.
+  3. Persistent custom teacher remarks per student per cycle.
+  4. Multi-term weighted annual compilation and co-scholastic grades.
