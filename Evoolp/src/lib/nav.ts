@@ -20,6 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Subjects", href: "/dashboard/subjects", roles: ["ADMIN", "TEACHER"] },
   { label: "Attendance", href: "/dashboard/attendance", roles: ["ADMIN", "TEACHER"] },
   { label: "Exams", href: "/dashboard/exams", roles: ["ADMIN", "TEACHER"] },
+  { label: "Report Cards", href: "/dashboard/report-cards", roles: ["ADMIN", "TEACHER"] },
   { label: "My Attendance", href: "/dashboard/my-attendance", roles: ["STUDENT", "PARENT"] },
   { label: "My Grades", href: "/dashboard/my-grades", roles: ["STUDENT", "PARENT"] },
   { label: "My Fees", href: "/dashboard/my-fees", roles: ["STUDENT", "PARENT"] },

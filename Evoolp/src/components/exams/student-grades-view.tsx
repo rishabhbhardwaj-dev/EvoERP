@@ -4,8 +4,6 @@ import { useState, useTransition } from "react";
 import {
   getMyGrades,
   type MyGradesData,
-  type ChildProfile,
-  type StudentGradeEntry,
 } from "@/lib/actions/exams";
 import {
   GraduationCap,
@@ -21,6 +19,9 @@ import {
   FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { getStudentReportCard, type ReportCardData } from "@/lib/actions/report-cards";
+import { ReportCardModal } from "@/components/report-cards/report-card-modal";
 
 const GRADE_COLORS: Record<string, string> = {
   A1: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 font-bold",
@@ -101,6 +102,52 @@ export function StudentGradesView({
     });
   }
 
+  const [isReportCardOpen, setIsReportCardOpen] = useState(false);
+  const [reportCardData, setReportCardData] = useState<ReportCardData | null>(null);
+  const [isLoadingReportCard, setIsLoadingReportCard] = useState(false);
+
+  async function handleOpenReportCard() {
+    if (grades.length === 0) {
+      toast.error("No grades available to generate a report card.");
+      return;
+    }
+    setIsLoadingReportCard(true);
+    try {
+      // Collect unique subject examIds
+      const seenSubjects = new Set<string>();
+      const cycleExamIds: string[] = [];
+      for (const g of grades) {
+        if (!seenSubjects.has(g.subjectId)) {
+          seenSubjects.add(g.subjectId);
+          cycleExamIds.push(g.examId);
+        }
+      }
+
+      const cycleName =
+        examTypeFilter !== "ALL"
+          ? EXAM_TYPE_LABELS[examTypeFilter]
+          : "Consolidated Progress Report";
+
+      const res = await getStudentReportCard({
+        studentId: selectedStudentId,
+        academicYear: student.academicYear,
+        examIds: cycleExamIds,
+        cycleName,
+      });
+
+      if (res.success && res.data) {
+        setReportCardData(res.data);
+        setIsReportCardOpen(true);
+      } else {
+        toast.error(res.error ?? "Failed to load report card.");
+      }
+    } catch {
+      toast.error("An error occurred while compiling report card.");
+    } finally {
+      setIsLoadingReportCard(false);
+    }
+  }
+
   const { student, children, overview, grades } = data;
   const passRate =
     overview.totalExams > 0
@@ -109,7 +156,7 @@ export function StudentGradesView({
 
   return (
     <div className="space-y-6">
-      {/* Header controls: Child selector (for parents) & Type Filter */}
+      {/* Header controls: Child selector (for parents) & Type Filter & Report Card Button */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border bg-card p-4 shadow-xs">
         {/* Child selector or Student details */}
         {isParent && children.length > 1 ? (
@@ -148,21 +195,38 @@ export function StudentGradesView({
           </div>
         )}
 
-        {/* Exam Type Filter */}
-        <div className="flex items-center gap-2">
-          <Filter className="size-4 text-muted-foreground hidden sm:block" />
-          <select
-            id="examTypeFilter"
-            value={examTypeFilter}
-            onChange={(e) => handleExamTypeFilter(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+        {/* Controls: Exam Type Filter & View Report Card button */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Filter className="size-4 text-muted-foreground hidden sm:block" />
+            <select
+              id="examTypeFilter"
+              value={examTypeFilter}
+              onChange={(e) => handleExamTypeFilter(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+            >
+              <option value="ALL">All Exam Cycles</option>
+              <option value="PERIODIC_TEST">Periodic Test</option>
+              <option value="HALF_YEARLY">Half-Yearly</option>
+              <option value="ANNUAL">Annual Exam</option>
+              <option value="PRACTICE">Practice / Mock</option>
+            </select>
+          </div>
+
+          <Button
+            size="sm"
+            onClick={handleOpenReportCard}
+            disabled={isLoadingReportCard || grades.length === 0}
+            className="h-9 gap-1.5 text-xs shadow-xs"
+            id="view-official-report-card-button"
           >
-            <option value="ALL">All Exam Cycles</option>
-            <option value="PERIODIC_TEST">Periodic Test</option>
-            <option value="HALF_YEARLY">Half-Yearly</option>
-            <option value="ANNUAL">Annual Exam</option>
-            <option value="PRACTICE">Practice / Mock</option>
-          </select>
+            {isLoadingReportCard ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Award className="size-3.5" />
+            )}
+            View Official Report Card
+          </Button>
         </div>
       </div>
 
@@ -373,6 +437,13 @@ export function StudentGradesView({
           </div>
         </div>
       )}
+
+      {/* Official Report Card Modal */}
+      <ReportCardModal
+        open={isReportCardOpen}
+        onOpenChange={setIsReportCardOpen}
+        reportCardData={reportCardData}
+      />
     </div>
   );
 }
