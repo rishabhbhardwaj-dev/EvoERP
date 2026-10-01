@@ -1091,6 +1091,7 @@ Stage 2 completes the consumption, analytics, and reporting dimensions of Module
 2. `src/app/(dashboard)/dashboard/my-grades/page.tsx`: Server component route protected by `requireTenant()`. Role-gated to `STUDENT` and `PARENT` (staff redirected to `/dashboard/exams`).
 3. `src/components/exams/exam-analytics-card.tsx`: Cohort assessment analytics component on `/dashboard/exams/[examId]` detail page displaying total appeared, class average marks and %, min/max marks, pass percentage, and horizontal bar charts for all 8 CBSE scholastic tiers (`A1`, `A2`, `B1`, `B2`, `C1`, `C2`, `D`, `E`).
 4. `scripts/test-exam-stage2.ts`: Comprehensive integration test suite covering baseline discovery, validation schemas, multi-child parent handling, student own-grade access, parent linked-child access and unlinked-child denial, academic summary calculations, exam analytics, RFC-4180 CSV formatting and escaping, privacy-preserving audit logging, RBAC matrix, tenant isolation, and baseline data preservation (53 / 53 test assertions passed).
+5. `src/lib/utils/exam.ts`: Pure synchronous CBSE grading calculation utility (`computeGrade`) and `GradeLabelValue` type, keeping pure utility logic decoupled from `"use server"` actions.
 
 ##### 3. Files Modified
 1. `src/lib/validations/exam.ts`: Added validation schemas for Stage 2 queries:
@@ -1105,6 +1106,7 @@ Stage 2 completes the consumption, analytics, and reporting dimensions of Module
 3. `src/components/students/student-detail-sheet.tsx`: Embedded "Academic Performance & Grades" summary card into 360-degree student slide-over sheet fetching `getStudentAcademicSummary`.
 4. `src/components/exams/exam-result-entry.tsx`: Integrated `ExamAnalyticsCard`, "Export CSV" client trigger, and "Print Result Sheet" institutional printable layout with signature areas for Subject Teacher, Class Teacher, and Principal.
 5. `Progress.md`: Updated Module 6 Stage 2 to COMPLETE, added Section 3 item 12 feature summary, and aligned Next Development Target to Phase 2 Module 7.
+6. `scripts/test-exam-stage1.ts`: Updated to import `computeGrade` directly from `src/lib/utils/exam.ts`.
 
 ##### 4. Backend & Server Action Architecture
 1. **Zero Database Migrations / Zero Schema Changes:**
