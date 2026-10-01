@@ -9,7 +9,7 @@
 
 * **Current Phase:** Phase 2 — Academic Core
 * **Active Branch:** `evoerp-foundation-fixes` (Tracking: `origin/evoerp-foundation-fixes`)
-* **Current HEAD Commit:** `2384385`
+* **Current HEAD Commit:** `d570d83`
 * **Working Tree:** Clean (0 uncommitted changes, verified 2026-10-01)
 * **Workspace:** `D:\Dekstop\EvoERP`
 * **Environment:** Next.js 15.5.25 App Router, React 19, TypeScript 5.9.3 (strict), Prisma 6.19.3, NextAuth v5 beta
@@ -32,7 +32,7 @@
 | **Phase 2** | Module 5 — Attendance | Stage 1 | **COMPLETE** | Daily Register, bulk marking, P/A/L/E/H states, 48h teacher guard, atomic upsert |
 | **Phase 2** | Module 5 — Attendance | Stage 2 | **COMPLETE** | Monthly matrix, CBSE 75% defaulters card, attendance workspace, CSV export, student dossier integration |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 1 | **COMPLETE** | Exam lifecycle, CBSE 8-tier grading, roll-call marks entry, zero-result delete guard, audit logging |
-| **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 2 | **NOT IMPLEMENTED** | Student/Parent grade portal, term aggregation, report card feeds |
+| **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 2 | **COMPLETE** | Student/Parent scorecard at /dashboard/my-grades, multi-child switcher, student dossier integration, RFC-4180 CSV export, print layout, CBSE 8-tier analytics card, on-demand term aggregation |
 | **Phase 2** | Module 7 — Report Cards | — | **NOT IMPLEMENTED** | Term Report Card generation |
 
 ---
@@ -196,25 +196,49 @@ The following features have been implemented and verified via TypeScript checks 
       * Phase 2 Regression suites: Attendance Stage 2 (30/30), Attendance Stage 1 (24/24), Subjects Stage 2 (17/17), Teachers Stage 2 (13/13), Students Stage 2 (All pass).
       * Baseline demo data (DEMO001, Aarav Patel, Class 6, Section A, Mathematics) completely preserved with zero dangling test records.
 
+12. **Exams / Marks / Grades — Student/Parent Scorecard, Analytics & Export (Module 6 — Stage 2):**
+    * **Student & Parent Scorecard Portal (`/dashboard/my-grades` & `student-grades-view.tsx`):**
+      * Role-gated route for `STUDENT` and `PARENT` users with automated session context resolution.
+      * Student views strictly their own results; cross-student grade viewing blocked.
+      * Parent views linked children with multi-child selector dropdown and automatic default child selection; unlinked child access denied.
+      * Academic year and exam type filters with real-time recalculation of scores and averages.
+      * 4 Cumulative KPI cards: Exams Taken, Overall Average %, Passed count, Failed count.
+      * Subject performance scorecard table displaying Subject, Exam Name, Exam Type, Date, Max Marks, Marks Obtained, Percentage, Grade badge (`A1`..`E`), and Result status (`Pass` / `Fail`).
+    * **Student Detail Sheet Integration (`StudentDetailSheet`):**
+      * Embedded "Academic Performance & Grades" summary card directly in the 360-degree student slide-over sheet.
+      * Displays cumulative average %, exams taken count, pass/fail breakdown, and recent exam results list.
+    * **Cohort Exam Performance Analytics (`ExamAnalyticsCard`):**
+      * Embedded on `/dashboard/exams/[examId]` detail page for staff (`ADMIN` and `TEACHER`).
+      * Computes total appeared count, class average marks, class average percentage, highest mark, lowest mark, and pass percentage.
+      * Grade distribution bar breakdown for all 8 CBSE scholastic tiers (`A1`, `A2`, `B1`, `B2`, `C1`, `C2`, `D`, `E`).
+    * **Exam Result CSV Export (`exportExamResultsCsv`):**
+      * Server-side RFC-4180 compliant CSV export generating student roll call with Roll No, Admission No, Student Name, Gender, Marks Obtained, Max Marks, Percentage, Grade, Status, and Remarks.
+      * Strictly staff-only (`ADMIN`, `TEACHER`); denied to `STUDENT` and `PARENT`.
+      * Emits `EXAM_RESULTS_EXPORTED` audit log with privacy-preserving aggregate metadata only (zero student marks logged).
+    * **Print-Friendly Institutional Result Sheet:**
+      * Clean institutional result layout with school name, address, exam details, class/section info, and table of results.
+      * Official signature blocks for Subject Teacher, Class Teacher, and Principal.
+      * High-contrast `@media print` styling hiding action buttons, headers, and navigation during `window.print()`.
+    * **Quality & Test Verification:**
+      * `tsc --noEmit`: 0 TypeScript compilation errors.
+      * Stage 2 Integration test script (`scripts/test-exam-stage2.ts`): 53 / 53 test assertions passed in WSL2.
+      * Full Phase 2 regression suites: 147 assertions/checkpoints passed across Exams Stage 1 (54/54 assertions), Attendance Stage 2 (30/30 assertions), Attendance Stage 1 (24/24 assertions), Subjects Stage 2 (17/17 assertions), Teachers Stage 2 (13/13 assertions), Students Stage 2 (9/9 checkpoints).
+      * Zero Prisma schema changes and zero database migrations required.
+      * Baseline demo data completely preserved with zero dangling test records.
+
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
 ### Future Phase 2 Modules
-* Module 6: Exams / Marks / Grades — Stage 2 (`/dashboard/my-grades`, parent portal, term aggregation, report card feeds)
 * Module 7: Report Cards — Term Report Card generation
 
 ---
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 2 — Module 6 — Exams / Marks / Grades — Stage 2**
+* **Target:** **Phase 2 — Module 7 — Report Cards**
 * **Primary Scope:**
-  1. Student / Parent grade view (`/dashboard/my-grades`).
-  2. Term marks aggregation, grade point averages, and class rank computations.
-  3. Student dossier (`StudentDetailSheet`) academic marks & grade tab integration.
-  4. CSV / printable exam report exports.
-
-
-
-
+  1. Term report card compilation and generation.
+  2. Multi-exam weighting and cumulative GPA / CGPA computation.
+  3. Printable student progress reports with institutional crest and signature areas.

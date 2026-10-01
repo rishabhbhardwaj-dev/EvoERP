@@ -29,11 +29,16 @@ import {
   CalendarCheck,
   AlertTriangle,
   Loader2,
+  Award,
 } from "lucide-react";
 import {
   getStudentAttendanceSummary,
   type StudentAttendanceSummaryData,
 } from "@/lib/actions/attendance";
+import {
+  getStudentAcademicSummary,
+  type StudentAcademicSummaryData,
+} from "@/lib/actions/exams";
 import { cn } from "cn";
 
 export interface StudentDetailRecord {
@@ -98,19 +103,24 @@ export function StudentDetailSheet({
   const [attendanceSummary, setAttendanceSummary] =
     useState<StudentAttendanceSummaryData | null>(null);
   const [isLoadingAttendance, setIsLoadingAttendance] = useState<boolean>(false);
+  const [academicSummary, setAcademicSummary] =
+    useState<StudentAcademicSummaryData | null>(null);
+  const [isLoadingAcademic, setIsLoadingAcademic] = useState<boolean>(false);
 
   const activeEnrollment =
     student?.enrollments.find((e) => e.status === "ACTIVE") ?? student?.enrollments[0];
 
-  // Fetch attendance summary when sheet opens or student changes
+  // Fetch attendance and academic summary when sheet opens or student changes
   useEffect(() => {
     if (!open || !student?.id) {
       setAttendanceSummary(null);
+      setAcademicSummary(null);
       return;
     }
 
     let isMounted = true;
     setIsLoadingAttendance(true);
+    setIsLoadingAcademic(true);
 
     getStudentAttendanceSummary({
       studentId: student.id,
@@ -131,6 +141,27 @@ export function StudentDetailSheet({
       })
       .finally(() => {
         if (isMounted) setIsLoadingAttendance(false);
+      });
+
+    getStudentAcademicSummary({
+      studentId: student.id,
+      academicYear: activeEnrollment?.academicYear,
+    })
+      .then((res) => {
+        if (isMounted) {
+          if (res.success && res.data) {
+            setAcademicSummary(res.data);
+          } else {
+            setAcademicSummary(null);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error("Error loading student academic summary:", err);
+        if (isMounted) setAcademicSummary(null);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingAcademic(false);
       });
 
     return () => {
@@ -427,6 +458,105 @@ export function StudentDetailSheet({
                             <span>{s.date}:</span>
                             <strong>{s.status[0]}</strong>
                           </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Academic Performance & Grades */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Award className="size-4 text-primary" /> Academic Performance &amp; Grades
+                </h3>
+                {academicSummary && academicSummary.totalExams > 0 && (
+                  <span className="text-xs font-bold text-primary">
+                    Tier {academicSummary.overallGrade}
+                  </span>
+                )}
+              </div>
+
+              {isLoadingAcademic ? (
+                <div className="rounded-lg border bg-card p-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Loading academic summary…</span>
+                </div>
+              ) : !academicSummary || academicSummary.totalExams === 0 ? (
+                <div className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
+                  No examination marks recorded for this student yet.
+                </div>
+              ) : (
+                <div className="rounded-lg border bg-card p-4 shadow-xs space-y-3">
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    <div className="rounded-md bg-muted/40 p-2">
+                      <p className="text-[10px] uppercase font-semibold text-muted-foreground">
+                        Average
+                      </p>
+                      <p className="text-lg font-bold text-foreground mt-0.5">
+                        {academicSummary.averagePercentage}%
+                      </p>
+                    </div>
+
+                    <div className="rounded-md bg-muted/40 p-2">
+                      <p className="text-[10px] uppercase font-semibold text-muted-foreground">
+                        Exams
+                      </p>
+                      <p className="text-lg font-bold text-foreground mt-0.5">
+                        {academicSummary.totalExams}
+                      </p>
+                    </div>
+
+                    <div className="rounded-md bg-muted/40 p-2">
+                      <p className="text-[10px] uppercase font-semibold text-emerald-700 dark:text-emerald-400">
+                        Passed
+                      </p>
+                      <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                        {academicSummary.passedCount}
+                      </p>
+                    </div>
+
+                    <div className="rounded-md bg-muted/40 p-2">
+                      <p className="text-[10px] uppercase font-semibold text-rose-700 dark:text-rose-400">
+                        Needs Imp.
+                      </p>
+                      <p className="text-lg font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+                        {academicSummary.failedCount}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Recent Assessment Results */}
+                  {academicSummary.recentResults.length > 0 && (
+                    <div className="border-t pt-2.5">
+                      <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">
+                        Recent Exam Results:
+                      </p>
+                      <div className="space-y-1.5">
+                        {academicSummary.recentResults.map((r) => (
+                          <div
+                            key={r.resultId}
+                            className="flex items-center justify-between rounded bg-muted/30 px-2.5 py-1 text-xs"
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="font-medium text-foreground truncate max-w-[130px]">
+                                {r.subjectName}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground truncate">
+                                ({r.examName})
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-mono text-muted-foreground text-[11px]">
+                                {r.marksObtained}/{r.maxMarks}
+                              </span>
+                              <span className="rounded bg-primary/10 px-1.5 py-0.2 text-[10px] font-bold text-primary">
+                                {r.grade}
+                              </span>
+                            </div>
+                          </div>
                         ))}
                       </div>
                     </div>

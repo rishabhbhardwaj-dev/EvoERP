@@ -9,33 +9,23 @@ import {
   updateExamSchema,
   saveExamResultsSchema,
   getExamsQuerySchema,
+  myGradesQuerySchema,
+  studentAcademicSummaryQuerySchema,
+  exportExamResultsQuerySchema,
   type CreateExamInput,
   type UpdateExamInput,
   type SaveExamResultsInput,
   type GetExamsQueryInput,
+  type MyGradesQueryInput,
+  type StudentAcademicSummaryQueryInput,
+  type ExportExamResultsQueryInput,
   type GradeLabelValue,
 } from "@/lib/validations/exam";
+import { computeGrade } from "@/lib/utils/exam";
 import type { ActionResult } from "./classes";
 import type { GradeLabel } from "@prisma/client";
 
 // ─────────────────────────── Grade computation ───────────────────────────
-
-/**
- * Computes the CBSE scholastic grade label from a percentage score.
- * Boundaries (inclusive): A1=91-100, A2=81-90, B1=71-80, B2=61-70,
- * C1=51-60, C2=41-50, D=33-40, E=<33.
- * This is a pure function — exported so it can be used in tests and components.
- */
-export function computeGrade(percentage: number): GradeLabelValue {
-  if (percentage >= 91) return "A1";
-  if (percentage >= 81) return "A2";
-  if (percentage >= 71) return "B1";
-  if (percentage >= 61) return "B2";
-  if (percentage >= 51) return "C1";
-  if (percentage >= 41) return "C2";
-  if (percentage >= 33) return "D";
-  return "E";
-}
 
 /**
  * Rounds a number to N decimal places using Math.round to avoid floating-point
@@ -857,6 +847,698 @@ export async function saveExamResults(
     return {
       success: false,
       error: "An unexpected error occurred while saving marks.",
+    };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STAGE 2: STUDENT / PARENT PORTAL, ANALYTICS, & CSV EXPORT
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface StudentGradeEntry {
+  resultId: string;
+  examId: string;
+  examName: string;
+  examType: string;
+  examDate: string | null;
+  subjectId: string;
+  subjectName: string;
+  subjectCode: string;
+  maxMarks: number;
+  passingMarks: number;
+  marksObtained: number;
+  percentage: number;
+  grade: GradeLabelValue;
+  isPassing: boolean;
+  remarks: string | null;
+}
+
+export interface StudentAcademicOverview {
+  totalExams: number;
+  passedCount: number;
+  failedCount: number;
+  averagePercentage: number;
+  overallGrade: GradeLabelValue;
+}
+
+export interface ChildProfile {
+  id: string;
+  name: string;
+  admissionNumber: string;
+  className: string;
+  sectionName: string;
+  academicYear: string;
+}
+
+export interface MyGradesData {
+  student: ChildProfile;
+  children: ChildProfile[];
+  overview: StudentAcademicOverview;
+  grades: StudentGradeEntry[];
+}
+
+export interface StudentAcademicSummaryData {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  className: string;
+  sectionName: string;
+  academicYear: string;
+  totalExams: number;
+  passedCount: number;
+  failedCount: number;
+  averagePercentage: number;
+  overallGrade: GradeLabelValue;
+  recentResults: StudentGradeEntry[];
+}
+
+export interface ExamAnalyticsData {
+  examId: string;
+  examName: string;
+  examType: string;
+  subjectName: string;
+  className: string;
+  sectionName: string;
+  maxMarks: number;
+  passingMarks: number;
+  totalEnrolled: number;
+  totalAppeared: number;
+  passedCount: number;
+  failedCount: number;
+  passPercentage: number;
+  classAverageMarks: number;
+  classAveragePercentage: number;
+  highestMarks: number;
+  lowestMarks: number;
+  gradeDistribution: Record<GradeLabelValue, number>;
+}
+
+export interface ExamCsvExportData {
+  filename: string;
+  csvContent: string;
+}
+
+/**
+ * Retrieves the grades and academic scorecard for the authenticated STUDENT or PARENT.
+ * - STUDENT: sees only their own results.
+ * - PARENT: sees linked children with child switcher support.
+ * Strictly forbidden for ADMIN and TEACHER (who should use /dashboard/exams).
+ */
+export async function getMyGrades(
+  input?: MyGradesQueryInput
+): Promise<ActionResult<MyGradesData>> {
+  try {
+    const ctx = await requireTenant();
+
+    if (ctx.role !== "STUDENT" && ctx.role !== "PARENT") {
+      return {
+        success: false,
+        error: "Unauthorized: only students and parents can view the personal grades portal.",
+      };
+    }
+
+    const parsed = myGradesQuerySchema.safeParse(input ?? {});
+    if (!parsed.success) {
+      const firstError = parsed.error.issues[0]?.message ?? "Invalid query parameters.";
+      return { success: false, error: firstError };
+    }
+
+    const { studentId, academicYear, examType } = parsed.data;
+
+    let targetStudentId = "";
+    let childrenProfiles: ChildProfile[] = [];
+
+    if (ctx.role === "STUDENT") {
+      // Find the student record linked to this user
+      const student = await prisma.student.findFirst({
+        where: {
+          schoolId: ctx.schoolId,
+          userId: ctx.userId,
+          status: "ACTIVE",
+        },
+        include: {
+          enrollments: {
+            where: { status: "ACTIVE" },
+            include: { class: true, section: true },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+        },
+      });
+
+      if (!student) {
+        return {
+          success: false,
+          error: "No active student record is associated with your student account.",
+        };
+      }
+
+      const activeEnrollment = student.enrollments[0];
+      const profile: ChildProfile = {
+        id: student.id,
+        name: `${student.firstName} ${student.lastName}`.trim(),
+        admissionNumber: student.admissionNumber,
+        className: activeEnrollment?.class.name ?? "—",
+        sectionName: activeEnrollment?.section.name ?? "—",
+        academicYear: activeEnrollment?.academicYear ?? "—",
+      };
+
+      targetStudentId = student.id;
+      childrenProfiles = [profile];
+    } else {
+      // Role is PARENT: find all active students linked to this parentUserId
+      const children = await prisma.student.findMany({
+        where: {
+          schoolId: ctx.schoolId,
+          parentUserId: ctx.userId,
+          status: "ACTIVE",
+        },
+        include: {
+          enrollments: {
+            where: { status: "ACTIVE" },
+            include: { class: true, section: true },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+        },
+        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      });
+
+      if (children.length === 0) {
+        return {
+          success: false,
+          error: "No active student records are linked to your parent account.",
+        };
+      }
+
+      childrenProfiles = children.map((c) => {
+        const enr = c.enrollments[0];
+        return {
+          id: c.id,
+          name: `${c.firstName} ${c.lastName}`.trim(),
+          admissionNumber: c.admissionNumber,
+          className: enr?.class.name ?? "—",
+          sectionName: enr?.section.name ?? "—",
+          academicYear: enr?.academicYear ?? "—",
+        };
+      });
+
+      // Verify selected student belongs to this parent
+      if (studentId) {
+        const found = childrenProfiles.find((c) => c.id === studentId);
+        if (!found) {
+          return {
+            success: false,
+            error: "Unauthorized: you do not have permission to view grades for this student.",
+          };
+        }
+        targetStudentId = found.id;
+      } else {
+        targetStudentId = childrenProfiles[0].id;
+      }
+    }
+
+    const currentProfile = childrenProfiles.find((c) => c.id === targetStudentId)!;
+
+    // Fetch exam results for the target student
+    const results = await prisma.examResult.findMany({
+      where: {
+        schoolId: ctx.schoolId,
+        studentId: targetStudentId,
+        ...(academicYear ? { exam: { academicYear } } : {}),
+        ...(examType ? { exam: { examType } } : {}),
+      },
+      include: {
+        exam: {
+          include: {
+            subject: { select: { id: true, name: true, code: true } },
+          },
+        },
+      },
+      orderBy: [{ exam: { examDate: "desc" } }, { createdAt: "desc" }],
+    });
+
+    const grades: StudentGradeEntry[] = results.map((r) => ({
+      resultId: r.id,
+      examId: r.exam.id,
+      examName: r.exam.name,
+      examType: r.exam.examType,
+      examDate: r.exam.examDate ? r.exam.examDate.toISOString().split("T")[0] : null,
+      subjectId: r.exam.subject.id,
+      subjectName: r.exam.subject.name,
+      subjectCode: r.exam.subject.code,
+      maxMarks: r.exam.maxMarks.toNumber(),
+      passingMarks: r.exam.passingMarks.toNumber(),
+      marksObtained: r.marksObtained.toNumber(),
+      percentage: r.percentage.toNumber(),
+      grade: r.grade as GradeLabelValue,
+      isPassing: r.isPassing,
+      remarks: r.remarks ?? null,
+    }));
+
+    const totalExams = grades.length;
+    const passedCount = grades.filter((g) => g.isPassing).length;
+    const failedCount = totalExams - passedCount;
+    const averagePercentage =
+      totalExams > 0
+        ? roundTo(
+            grades.reduce((sum, g) => sum + g.percentage, 0) / totalExams,
+            2
+          )
+        : 0;
+    const overallGrade = computeGrade(averagePercentage);
+
+    return {
+      success: true,
+      data: {
+        student: currentProfile,
+        children: childrenProfiles,
+        overview: {
+          totalExams,
+          passedCount,
+          failedCount,
+          averagePercentage,
+          overallGrade,
+        },
+        grades,
+      },
+    };
+  } catch (err) {
+    console.error("Error fetching my grades:", err);
+    return {
+      success: false,
+      error: "An unexpected error occurred while loading your grades.",
+    };
+  }
+}
+
+/**
+ * Retrieves the academic performance summary for a student to embed in StudentDetailSheet.
+ * Accessible to ADMIN and TEACHER roles.
+ */
+export async function getStudentAcademicSummary(
+  input: StudentAcademicSummaryQueryInput
+): Promise<ActionResult<StudentAcademicSummaryData>> {
+  try {
+    const ctx = await requireTenant();
+
+    if (ctx.role !== "ADMIN" && ctx.role !== "TEACHER") {
+      return {
+        success: false,
+        error: "Unauthorized: only administrators and teachers can view student academic summaries.",
+      };
+    }
+
+    const parsed = studentAcademicSummaryQuerySchema.safeParse(input);
+    if (!parsed.success) {
+      const firstError = parsed.error.issues[0]?.message ?? "Invalid student ID.";
+      return { success: false, error: firstError };
+    }
+
+    const { studentId, academicYear } = parsed.data;
+
+    const student = await prisma.student.findFirst({
+      where: { id: studentId, schoolId: ctx.schoolId },
+      include: {
+        enrollments: {
+          where: {
+            status: "ACTIVE",
+            ...(academicYear ? { academicYear } : {}),
+          },
+          include: { class: true, section: true },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
+    });
+
+    if (!student) {
+      return {
+        success: false,
+        error: "Student not found in your school records.",
+      };
+    }
+
+    const enr = student.enrollments[0];
+
+    const results = await prisma.examResult.findMany({
+      where: {
+        schoolId: ctx.schoolId,
+        studentId: student.id,
+        ...(academicYear ? { exam: { academicYear } } : {}),
+      },
+      include: {
+        exam: {
+          include: {
+            subject: { select: { id: true, name: true, code: true } },
+          },
+        },
+      },
+      orderBy: [{ exam: { examDate: "desc" } }, { createdAt: "desc" }],
+    });
+
+    const mappedResults: StudentGradeEntry[] = results.map((r) => ({
+      resultId: r.id,
+      examId: r.exam.id,
+      examName: r.exam.name,
+      examType: r.exam.examType,
+      examDate: r.exam.examDate ? r.exam.examDate.toISOString().split("T")[0] : null,
+      subjectId: r.exam.subject.id,
+      subjectName: r.exam.subject.name,
+      subjectCode: r.exam.subject.code,
+      maxMarks: r.exam.maxMarks.toNumber(),
+      passingMarks: r.exam.passingMarks.toNumber(),
+      marksObtained: r.marksObtained.toNumber(),
+      percentage: r.percentage.toNumber(),
+      grade: r.grade as GradeLabelValue,
+      isPassing: r.isPassing,
+      remarks: r.remarks ?? null,
+    }));
+
+    const totalExams = mappedResults.length;
+    const passedCount = mappedResults.filter((g) => g.isPassing).length;
+    const failedCount = totalExams - passedCount;
+    const averagePercentage =
+      totalExams > 0
+        ? roundTo(
+            mappedResults.reduce((sum, g) => sum + g.percentage, 0) / totalExams,
+            2
+          )
+        : 0;
+    const overallGrade = computeGrade(averagePercentage);
+
+    return {
+      success: true,
+      data: {
+        studentId: student.id,
+        studentName: `${student.firstName} ${student.lastName}`.trim(),
+        admissionNumber: student.admissionNumber,
+        className: enr?.class.name ?? "—",
+        sectionName: enr?.section.name ?? "—",
+        academicYear: enr?.academicYear ?? "—",
+        totalExams,
+        passedCount,
+        failedCount,
+        averagePercentage,
+        overallGrade,
+        recentResults: mappedResults.slice(0, 5),
+      },
+    };
+  } catch (err) {
+    console.error("Error fetching student academic summary:", err);
+    return {
+      success: false,
+      error: "An unexpected error occurred while loading student academic performance.",
+    };
+  }
+}
+
+/**
+ * Computes statistical analytics for an exam: class average, highest/lowest marks,
+ * pass percentage, and CBSE 8-tier grade distribution counts.
+ * Available to ADMIN and TEACHER.
+ */
+export async function getExamAnalytics(
+  examId: string
+): Promise<ActionResult<ExamAnalyticsData>> {
+  try {
+    const ctx = await requireTenant();
+
+    if (ctx.role !== "ADMIN" && ctx.role !== "TEACHER") {
+      return {
+        success: false,
+        error: "Unauthorized: only administrators and teachers can view exam analytics.",
+      };
+    }
+
+    const exam = await prisma.exam.findFirst({
+      where: { id: examId, schoolId: ctx.schoolId },
+      include: {
+        class: { select: { name: true } },
+        section: { select: { name: true } },
+        subject: { select: { name: true } },
+        results: {
+          select: {
+            marksObtained: true,
+            percentage: true,
+            grade: true,
+            isPassing: true,
+          },
+        },
+      },
+    });
+
+    if (!exam) {
+      return {
+        success: false,
+        error: "Exam not found in your school records.",
+      };
+    }
+
+    const totalEnrolled = await prisma.enrollment.count({
+      where: {
+        schoolId: ctx.schoolId,
+        classId: exam.classId,
+        sectionId: exam.sectionId,
+        academicYear: exam.academicYear,
+        status: "ACTIVE",
+        student: { status: "ACTIVE" },
+      },
+    });
+
+    const totalAppeared = exam.results.length;
+    const maxMarks = exam.maxMarks.toNumber();
+    const passingMarks = exam.passingMarks.toNumber();
+
+    const gradeDistribution: Record<GradeLabelValue, number> = {
+      A1: 0,
+      A2: 0,
+      B1: 0,
+      B2: 0,
+      C1: 0,
+      C2: 0,
+      D: 0,
+      E: 0,
+    };
+
+    let classAverageMarks = 0;
+    let classAveragePercentage = 0;
+    let highestMarks = 0;
+    let lowestMarks = 0;
+    let passedCount = 0;
+    let failedCount = 0;
+    let passPercentage = 0;
+
+    if (totalAppeared > 0) {
+      const marksList = exam.results.map((r) => r.marksObtained.toNumber());
+      highestMarks = Math.max(...marksList);
+      lowestMarks = Math.min(...marksList);
+
+      const sumMarks = marksList.reduce((acc, m) => acc + m, 0);
+      classAverageMarks = roundTo(sumMarks / totalAppeared, 2);
+
+      const sumPct = exam.results.reduce(
+        (acc, r) => acc + r.percentage.toNumber(),
+        0
+      );
+      classAveragePercentage = roundTo(sumPct / totalAppeared, 2);
+
+      passedCount = exam.results.filter((r) => r.isPassing).length;
+      failedCount = totalAppeared - passedCount;
+      passPercentage = roundTo((passedCount / totalAppeared) * 100, 2);
+
+      for (const r of exam.results) {
+        const g = r.grade as GradeLabelValue;
+        if (gradeDistribution[g] !== undefined) {
+          gradeDistribution[g]++;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        examId: exam.id,
+        examName: exam.name,
+        examType: exam.examType,
+        subjectName: exam.subject.name,
+        className: exam.class.name,
+        sectionName: exam.section.name,
+        maxMarks,
+        passingMarks,
+        totalEnrolled,
+        totalAppeared,
+        passedCount,
+        failedCount,
+        passPercentage,
+        classAverageMarks,
+        classAveragePercentage,
+        highestMarks,
+        lowestMarks,
+        gradeDistribution,
+      },
+    };
+  } catch (err) {
+    console.error("Error fetching exam analytics:", err);
+    return {
+      success: false,
+      error: "An unexpected error occurred while calculating exam analytics.",
+    };
+  }
+}
+
+/**
+ * Generates an RFC-4180 CSV export of exam results.
+ * Restricted to staff (ADMIN and TEACHER).
+ * Logs an EXAM_RESULTS_EXPORTED audit event with aggregate metadata only.
+ */
+export async function exportExamResultsCsv(
+  examId: string
+): Promise<ActionResult<ExamCsvExportData>> {
+  try {
+    const ctx = await requireTenant();
+
+    if (ctx.role !== "ADMIN" && ctx.role !== "TEACHER") {
+      return {
+        success: false,
+        error: "Unauthorized: only administrators and teachers can export exam results.",
+      };
+    }
+
+    const exam = await prisma.exam.findFirst({
+      where: { id: examId, schoolId: ctx.schoolId },
+      include: {
+        school: { select: { name: true } },
+        class: { select: { name: true } },
+        section: { select: { name: true } },
+        subject: { select: { name: true, code: true } },
+        results: {
+          include: {
+            student: {
+              select: {
+                admissionNumber: true,
+                firstName: true,
+                lastName: true,
+                gender: true,
+              },
+            },
+          },
+          orderBy: [
+            { student: { lastName: "asc" } },
+            { student: { firstName: "asc" } },
+          ],
+        },
+      },
+    });
+
+    if (!exam) {
+      return {
+        success: false,
+        error: "Exam not found in your school records.",
+      };
+    }
+
+    const escapeCsv = (val: string | number | null | undefined): string => {
+      if (val === null || val === undefined) return "";
+      const str = String(val);
+      if (
+        str.includes(",") ||
+        str.includes('"') ||
+        str.includes("\n") ||
+        str.includes("\r")
+      ) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const lines: string[] = [];
+
+    // Header metadata
+    lines.push(`Institutional Examination Scorecard`);
+    lines.push(`Institution,${escapeCsv(exam.school.name)}`);
+    lines.push(
+      `Exam Name,${escapeCsv(exam.name)},Exam Type,${escapeCsv(exam.examType)},Academic Year,${escapeCsv(exam.academicYear)}`
+    );
+    lines.push(
+      `Class,${escapeCsv(exam.class.name)},Section,${escapeCsv(exam.section.name)},Subject,${escapeCsv(exam.subject.name)} (${escapeCsv(exam.subject.code)})`
+    );
+    lines.push(
+      `Max Marks,${exam.maxMarks.toNumber()},Passing Marks,${exam.passingMarks.toNumber()},Total Appeared,${exam.results.length}`
+    );
+    lines.push("");
+
+    // Column headers
+    lines.push(
+      [
+        "Sr",
+        "Admission No",
+        "Student Name",
+        "Gender",
+        "Marks Obtained",
+        "Max Marks",
+        "Percentage",
+        "CBSE Grade",
+        "Status",
+        "Remarks",
+      ]
+        .map(escapeCsv)
+        .join(",")
+    );
+
+    // Data rows
+    exam.results.forEach((r, idx) => {
+      const studentName = `${r.student.firstName} ${r.student.lastName}`.trim();
+      const row = [
+        idx + 1,
+        r.student.admissionNumber,
+        studentName,
+        r.student.gender ?? "—",
+        r.marksObtained.toNumber(),
+        exam.maxMarks.toNumber(),
+        `${r.percentage.toNumber()}%`,
+        r.grade,
+        r.isPassing ? "PASS" : "FAIL",
+        r.remarks ?? "",
+      ];
+      lines.push(row.map(escapeCsv).join(","));
+    });
+
+    const csvContent = lines.join("\r\n");
+
+    // Sanitize filename
+    const cleanExamName = exam.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const filename = `${cleanExamName}_results.csv`;
+
+    // Audit log (aggregate only — no student marks)
+    await logAudit(ctx.schoolId, {
+      userId: ctx.userId,
+      action: "EXAM_RESULTS_EXPORTED",
+      entityType: "EXAM",
+      entityId: exam.id,
+      newValues: {
+        examName: exam.name,
+        examType: exam.examType,
+        className: exam.class.name,
+        sectionName: exam.section.name,
+        subjectName: exam.subject.name,
+        academicYear: exam.academicYear,
+        totalResultsExported: exam.results.length,
+      },
+    });
+
+    return {
+      success: true,
+      data: {
+        filename,
+        csvContent,
+      },
+    };
+  } catch (err) {
+    console.error("Error exporting exam results CSV:", err);
+    return {
+      success: false,
+      error: "An unexpected error occurred while generating the CSV export.",
     };
   }
 }

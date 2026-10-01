@@ -159,3 +159,48 @@ export const getExamDetailQuerySchema = z.object({
 });
 
 export type GetExamDetailQueryInput = z.infer<typeof getExamDetailQuerySchema>;
+
+// ─────────────────────── Stage 2 Query Schemas ───────────────────────
+
+/**
+ * Query schema for student/parent grade scorecard.
+ * For parents with multiple children, studentId selects the child.
+ */
+export const myGradesQuerySchema = z.object({
+  studentId: z.string().optional(),
+  academicYear: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{4}$/, "Invalid academic year format (e.g. 2025-2026).")
+    .optional(),
+  examType: examTypeEnum.optional(),
+});
+
+export type MyGradesQueryInput = z.infer<typeof myGradesQuerySchema>;
+
+/**
+ * Query schema for fetching student academic performance summary in StudentDetailSheet.
+ */
+export const studentAcademicSummaryQuerySchema = z.object({
+  studentId: z.string().min(1, "Student ID is required."),
+  academicYear: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{4}$/, "Invalid academic year format (e.g. 2025-2026).")
+    .optional(),
+});
+
+export type StudentAcademicSummaryQueryInput = z.infer<
+  typeof studentAcademicSummaryQuerySchema
+>;
+
+/**
+ * Query schema for exporting exam results to CSV.
+ */
+export const exportExamResultsQuerySchema = z.object({
+  examId: z.string().min(1, "Exam ID is required."),
+});
+
+export type ExportExamResultsQueryInput = z.infer<
+  typeof exportExamResultsQuerySchema
+>;
