@@ -7,12 +7,16 @@ import {
   getAvailableExamCyclesForSection,
   getClassReportCardRoster,
   getStudentReportCard,
+  exportClassReportCardSummaryCsv,
   type ExamCycleOption,
   type ClassReportCardRosterItem,
   type ReportCardData,
 } from "@/lib/actions/report-cards";
 import { StudentRosterList } from "./student-roster-list";
 import { ReportCardModal } from "./report-card-modal";
+import { BatchReportCardModal } from "./batch-report-card-modal";
+import { TeacherRemarksDialog } from "./teacher-remarks-dialog";
+import { MultiTermModal } from "./multi-term-modal";
 
 interface ClassOption {
   id: string;
@@ -28,7 +32,9 @@ interface ReportCardWorkspaceProps {
 
 export function ReportCardWorkspace({
   classes,
+  userRole,
 }: ReportCardWorkspaceProps) {
+  const isStaff = userRole === "ADMIN" || userRole === "TEACHER";
   const firstClass = classes[0];
 
   const [selectedClassId, setSelectedClassId] = useState(firstClass?.id ?? "");
@@ -58,10 +64,19 @@ export function ReportCardWorkspace({
   const [roster, setRoster] = useState<ClassReportCardRosterItem[]>([]);
   const [isLoadingRoster, setIsLoadingRoster] = useState(false);
 
-  // Active student report card preview
+  // Client-side batch selection state
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+
+  // Modals state
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [reportCardData, setReportCardData] = useState<ReportCardData | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [singleModalOpen, setSingleModalOpen] = useState(false);
+  const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [remarksDialogOpen, setRemarksDialogOpen] = useState(false);
+  const [multiTermModalOpen, setMultiTermModalOpen] = useState(false);
+
+  // Export CSV state
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
 
   // 1. Fetch cycles when class & section change
   useEffect(() => {
@@ -98,7 +113,12 @@ export function ReportCardWorkspace({
   // Selected cycle object
   const activeCycle = cycles.find((c) => c.cycleId === selectedCycleId);
 
-  // 2. Fetch roster when cycle changes
+  // 2. Clear selections whenever class, section, or cycle changes
+  useEffect(() => {
+    setSelectedStudentIds([]);
+  }, [selectedClassId, selectedSectionId, selectedCycleId]);
+
+  // 3. Fetch roster when cycle changes
   useEffect(() => {
     if (!selectedClassId || !selectedSectionId || !selectedClass || !activeCycle) {
       setRoster([]);
@@ -128,7 +148,7 @@ export function ReportCardWorkspace({
     };
   }, [selectedClassId, selectedSectionId, selectedClass, activeCycle]);
 
-  // 3. Open Report Card Preview
+  // 4. Open Single Student Report Card Preview
   async function handleSelectStudent(studentId: string) {
     if (!selectedClass || !activeCycle) return;
 
@@ -144,7 +164,7 @@ export function ReportCardWorkspace({
 
       if (res.success && res.data) {
         setReportCardData(res.data);
-        setModalOpen(true);
+        setSingleModalOpen(true);
       } else {
         toast.error(res.error ?? "Failed to compile student report card.");
       }
@@ -152,6 +172,74 @@ export function ReportCardWorkspace({
       toast.error("An error occurred while compiling report card.");
     }
   }
+
+  // 5. Selection Handlers
+  function handleToggleSelectStudent(studentId: string) {
+    setSelectedStudentIds((prev) =>
+      prev.includes(studentId)
+        ? prev.filter((id) => id !== studentId)
+        : [...prev, studentId]
+    );
+  }
+
+  function handleSelectAll() {
+    setSelectedStudentIds(roster.map((r) => r.studentId));
+  }
+
+  function handleDeselectAll() {
+    setSelectedStudentIds([]);
+  }
+
+  // 6. CSV Export Action
+  async function handleExportCsv() {
+    if (!selectedClass || !activeCycle || !selectedClassId || !selectedSectionId) {
+      toast.error("Please select a valid class, section, and evaluation cycle first.");
+      return;
+    }
+
+    setIsExportingCsv(true);
+    try {
+      const res = await exportClassReportCardSummaryCsv({
+        classId: selectedClassId,
+        sectionId: selectedSectionId,
+        academicYear: selectedClass.academicYear,
+        examIds: activeCycle.examIds,
+        cycleName: activeCycle.cycleName,
+      });
+
+      if (res.success && res.data) {
+        // Create Blob with UTF-8 encoding preserved
+        const blob = new Blob([res.data.csvContent], {
+          type: "text/csv;charset=utf-8;",
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = res.data.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        toast.success(
+          `Exported summary for ${res.data.totalStudents} candidate(s).`
+        );
+      } else {
+        toast.error(res.error ?? "Failed to export report card CSV.");
+      }
+    } catch (err) {
+      console.error("CSV Export error:", err);
+      toast.error("An unexpected error occurred while exporting report card CSV.");
+    } finally {
+      setIsExportingCsv(false);
+    }
+  }
+
+  const rosterStudents = roster.map((r) => ({
+    id: r.studentId,
+    name: r.studentName,
+    admissionNumber: r.admissionNumber,
+  }));
 
   const selectClass =
     "h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus:border-ring focus:ring-1 focus:ring-ring";
@@ -259,15 +347,76 @@ export function ReportCardWorkspace({
           cycleName={activeCycle?.cycleName ?? "Examination"}
           onSelectStudent={handleSelectStudent}
           selectedStudentId={selectedStudentId}
+          selectedStudentIds={selectedStudentIds}
+          onToggleSelectStudent={handleToggleSelectStudent}
+          onSelectAll={handleSelectAll}
+          onDeselectAll={handleDeselectAll}
+          onBatchPrint={() => setBatchModalOpen(true)}
+          onExportCsv={handleExportCsv}
+          onManageRemarks={() => setRemarksDialogOpen(true)}
+          onOpenMultiTerm={() => setMultiTermModalOpen(true)}
+          isStaff={isStaff}
+          isExportingCsv={isExportingCsv}
         />
       )}
 
-      {/* Printable Report Card Modal */}
+      {/* Single Printable Report Card Modal (Stage 1 Compatible) */}
       <ReportCardModal
-        open={modalOpen}
-        onOpenChange={setModalOpen}
+        open={singleModalOpen}
+        onOpenChange={setSingleModalOpen}
         reportCardData={reportCardData}
       />
+
+      {/* Batch Printable Report Cards Modal (Stage 2 N+1 Free Engine) */}
+      {activeCycle && selectedClass && (
+        <BatchReportCardModal
+          open={batchModalOpen}
+          onOpenChange={setBatchModalOpen}
+          studentIds={selectedStudentIds}
+          classId={selectedClassId}
+          sectionId={selectedSectionId}
+          academicYear={selectedClass.academicYear}
+          examIds={activeCycle.examIds}
+          cycleName={activeCycle.cycleName}
+          cycleKey={`${activeCycle.examType || "EXAM"}::${activeCycle.cycleName.toLowerCase().trim()}`}
+        />
+      )}
+
+      {/* Teacher Remarks & Co-Scholastic Editor Dialog (Stage 2) */}
+      {activeCycle && selectedClass && (
+        <TeacherRemarksDialog
+          open={remarksDialogOpen}
+          onOpenChange={setRemarksDialogOpen}
+          classId={selectedClassId}
+          sectionId={selectedSectionId}
+          academicYear={selectedClass.academicYear}
+          cycleName={activeCycle.cycleName}
+          examType={activeCycle.examType}
+          students={rosterStudents}
+          initialStudentId={selectedStudentIds[0] || selectedStudentId}
+          userRole={userRole}
+          onSaved={() => {
+            // Re-fetch report card data if single preview was loaded
+            if (selectedStudentId && singleModalOpen) {
+              handleSelectStudent(selectedStudentId);
+            }
+          }}
+        />
+      )}
+
+      {/* Annual Multi-Term Compilation Modal (Stage 2) */}
+      {selectedClass && (
+        <MultiTermModal
+          open={multiTermModalOpen}
+          onOpenChange={setMultiTermModalOpen}
+          classId={selectedClassId}
+          sectionId={selectedSectionId}
+          academicYear={selectedClass.academicYear}
+          cycles={cycles}
+          students={rosterStudents}
+          initialStudentId={selectedStudentIds[0] || selectedStudentId}
+        />
+      )}
     </div>
   );
 }

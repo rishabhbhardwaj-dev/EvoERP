@@ -104,6 +104,8 @@ model School {
   attendanceRecords  AttendanceRecord[]
   exams              Exam[]
   examResults        ExamResult[]
+  reportCardRemarks  ReportCardRemark[]
+  coScholasticEntries CoScholasticEntry[]
 
   @@index([status])
 }
@@ -128,6 +130,8 @@ model User {
   markedAttendanceSessions AttendanceSession[] @relation("AttendanceMarker")
   createdExams             Exam[]              @relation("ExamCreator")
   enteredResults           ExamResult[]        @relation("ResultEnteredBy")
+  authoredRemarks          ReportCardRemark[]
+  authoredCoScholastics    CoScholasticEntry[]
 
   @@unique([schoolId, email])
   @@index([schoolId])
@@ -161,6 +165,8 @@ model Student {
   enrollments       Enrollment[]
   attendanceRecords AttendanceRecord[]
   examResults       ExamResult[]
+  reportCardRemarks   ReportCardRemark[]
+  coScholasticEntries CoScholasticEntry[]
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -390,6 +396,51 @@ model ExamResult {
   @@index([schoolId, examId])
   @@index([schoolId, studentId])
   @@index([studentId, grade])
+}
+
+/// Persistent appraisal remarks entered by teachers/admins for a student's report card.
+model ReportCardRemark {
+  id           String   @id @default(cuid())
+  schoolId     String
+  studentId    String
+  academicYear String
+  /// Canonical cycle identity, e.g. "PERIODIC_TEST::periodic test 1" or "ANNUAL::annual"
+  cycleKey     String
+  /// Display name of the evaluation cycle, e.g. "Periodic Test 1"
+  cycleName    String
+  remarks      String   @db.Text
+  authorId     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  school  School  @relation(fields: [schoolId],  references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId],  references: [id], onDelete: Restrict)
+
+  @@unique([schoolId, studentId, academicYear, cycleKey])
+  @@index([schoolId, academicYear, cycleKey])
+}
+
+/// CBSE Co-Scholastic & Discipline performance grades (A, B, C).
+model CoScholasticEntry {
+  id           String   @id @default(cuid())
+  schoolId     String
+  studentId    String
+  academicYear String
+  term         String   /// "Term 1", "Term 2", "Annual"
+  activity     String   /// "WORK_EDUCATION", "ART_EDUCATION", "HEALTH_AND_PHYSICAL_EDUCATION", "DISCIPLINE"
+  grade        String   /// "A", "B", "C"
+  remarks      String?
+  authorId     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  school  School  @relation(fields: [schoolId],  references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId],  references: [id], onDelete: Restrict)
+
+  @@unique([schoolId, studentId, academicYear, term, activity])
+  @@index([schoolId, academicYear, term])
 }
 
 // ─────────────────── NextAuth (Auth.js) adapter tables ───────────────────

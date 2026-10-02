@@ -1230,13 +1230,121 @@ Stage 1 implements dynamic single-student progress report compilation, multi-exa
 ##### 6. Current Status & Git Checkpoint
 * **Stage 1 (Single-Student Report Card Compilation & Printing):** **COMPLETE & FULLY VERIFIED**
 * **Git Checkpoint Commit:** `0a494d3 feat(reports): complete report cards stage 1 compilation and printing`
-* **Stage 2 Deferred Features:**
-  - Whole-class continuous batch printing with page breaks
-  - Cohort report-card summary CSV export with attendance and term totals
-  - Persistent custom teacher remarks per student per cycle
-  - Multi-term weighted annual compilation and co-scholastic grades
-  - Roll Number support (upon future schema evolution)
-* **Next Development Target:** **Phase 2 — Module 7 — Report Cards (Stage 2)**
+* **Stage 2 Status:** **COMPLETE & FULLY VERIFIED**
+
+---
+
+#### Stage 2: Batch Printing, Cohort CSV Export, Persistent Remarks, Co-Scholastic Grades & Multi-Term Annual Compilation
+
+##### 1. Overview & Objectives
+Stage 2 completes the Report Cards module by delivering whole-class continuous batch printing, cohort report-card summary CSV export, persistent teacher remarks, co-scholastic activities and discipline evaluations, dynamic multi-term weighted annual compilation, strict staff RBAC and multi-tenant isolation, metadata-only audit trails, and a dedicated print-only root architecture that guarantees pixel-perfect single-card and batch A4 print layout without pagination fragmentation.
+
+##### 2. Architecture & Data Engine
+1. **Pure In-Memory Compiler (`compileReportCardData` in `src/lib/utils/report-card.ts`):**
+   - Pure, deterministic calculation utility taking raw exam results, attendance session statistics, teacher remarks, and co-scholastic entries for a student and returning a fully computed `ReportCardData` structure.
+   - Preserves all Stage 1 single-student compilation semantics, Decimal arithmetic, and CBSE 8-tier grade assignment (`A1`..`E`).
+2. **Shared 7-Query Batched Data Engine (`getBatchReportCardData` in `src/lib/actions/report-cards.ts`):**
+   - Resolves data for entire student cohorts using exactly 7 batched database queries regardless of student count ($O(1)$ database round-trips relative to cohort size):
+     1. Session context & tenant validation (`requireTenant`)
+     2. Active student enrollments query (`prisma.enrollment.findMany`)
+     3. Exam details query (`prisma.exam.findMany`)
+     4. Exam results query for all cohort students (`prisma.examResult.findMany`)
+     5. Attendance sessions count (`prisma.attendanceSession.count`)
+     6. Attendance records for cohort students (`prisma.attendanceRecord.findMany`)
+     7. Teacher remarks & co-scholastic entries (`prisma.reportCardRemark.findMany`, `prisma.coScholasticEntry.findMany`)
+   - Performs in-memory mapping per student, guaranteeing strict multi-student isolation with zero data contamination between student records.
+
+##### 3. Database Schema & Migration
+1. **Migration `20261002064715_add_report_card_stage2_remarks_and_coscholastic`:**
+   - **`ReportCardRemark` Model:** Stores persistent qualitative appraisals per student per cycle.
+     - Schema: `id`, `schoolId`, `studentId`, `cycleKey`, `remarks`, `authorId`, `createdAt`, `updatedAt`.
+     - Relations: `School`, `Student`, `User` (`author`).
+     - Composite unique key: `@@unique([schoolId, studentId, cycleKey])` supporting atomic upsert without duplicate rows.
+   - **`CoScholasticEntry` Model:** Stores CBSE 3-point scale co-scholastic grades (`A`, `B`, `C`) and teacher remarks per activity domain.
+     - Schema: `id`, `schoolId`, `studentId`, `cycleKey`, `activity`, `grade`, `remarks`, `createdAt`, `updatedAt`.
+     - Relations: `School`, `Student`.
+     - Composite unique key: `@@unique([schoolId, studentId, cycleKey, activity])` preventing duplicate activity grades per student per term.
+2. **Roll Number Clarification:** `rollNumber` was intentionally excluded from the Stage 2 schema evolution to preserve strict alignment with the baseline `Student` schema, utilizing student `admissionNumber` and ordinal roster indexing (`Sr. No.`) across all views and exports.
+
+##### 4. Validation Schemas (`src/lib/validations/report-card.ts`)
+1. `batchReportCardQuerySchema`: Validates `studentIds` (array of 1–100 UUIDs), `academicYear`, `examIds` (1–20 UUIDs), `cycleName`, and optional `cycleKey`.
+2. `exportReportCardsCsvSchema`: Validates `classId`, `sectionId`, `academicYear`, `examIds`, `cycleName`, and optional `cycleKey`.
+3. `saveTeacherRemarkSchema`: Validates `studentId`, `cycleKey` (`/^[A-Za-z0-9_\-:.]{1,100}$/`), and `remarks` (max 1,000 chars).
+4. `saveCoScholasticSchema`: Validates `studentId`, `cycleKey`, `activity` (`WORK_EDUCATION`, `ART_EDUCATION`, `HEALTH_AND_PHYSICAL_EDUCATION`, `DISCIPLINE`), `grade` (`A`, `B`, `C`), and optional `remarks` (max 500 chars).
+5. `multiTermCompilationSchema`: Validates `studentId`, `academicYear`, and `terms` array requiring a minimum of 2 terms with weights summing to exactly 100.00%.
+
+##### 5. Server Actions (`src/lib/actions/report-cards.ts`)
+1. `getBatchReportCardData`: Executes the 7-query batched data engine for cohort report-card generation with `ADMIN` or `TEACHER` authorization.
+2. `getStudentReportCard`: Refactored to reuse `compileReportCardData` and attach persistent `ReportCardRemark` and `CoScholasticEntry` records.
+3. `exportClassReportCardSummaryCsv`: Compiles cohort report card data and exports RFC-4180 compliant CSV table.
+4. `saveTeacherRemark` & `getTeacherRemarksForSection`: Handles upserting persistent teacher appraisals with `authorId` derived from session and `cycleKey` isolation.
+5. `saveCoScholasticGrades` & `getCoScholasticForSection`: Manages co-scholastic 3-point grade entries (`A`, `B`, `C`).
+6. `getMultiTermReportCard`: Synthesizes dynamic multi-term weighted annual report cards.
+7. `recordBatchReportCardPrintAudit`: Emits `BATCH_REPORT_CARDS_PRINTED` audit logs with aggregate metadata only.
+
+##### 6. UI Components & Pages
+1. `src/components/report-cards/printable-report-card.tsx`: Refactored into `ReportCardDocumentContent` (pure A4 document layout) and `PrintableReportCard` (screen preview + dedicated print root portal).
+2. `src/components/report-cards/batch-printable-report-cards.tsx`: Continuous batch printing preview toolbar and print root portal.
+3. `src/components/report-cards/batch-report-card-modal.tsx`: Modal dialog fetching batch data and hosting continuous batch print preview.
+4. `src/components/report-cards/multi-term-modal.tsx`: Interactive multi-term synthesis modal for configuring term weights and compiling annual progress reports.
+5. `src/components/report-cards/teacher-remarks-dialog.tsx`: Dialog for editing persistent teacher remarks and co-scholastic grades for enrolled students.
+6. `src/components/report-cards/report-card-workspace.tsx` & `student-roster-list.tsx`: Updated workspace with multi-select checkboxes, "Batch Print", "Export CSV", "Annual Multi-Term", and "Remarks" action triggers.
+7. `src/components/report-cards/report-card-modal.tsx`: Dialog wrapper updated with `sm:max-w-5xl print:hidden`.
+8. `src/app/globals.css`: Added global `@media print` rules for `#report-card-print-root` and `.report-card-page`.
+
+##### 7. Print Architecture & Layout Defect Resolution
+- **Defect Discovery:** Initial print testing inside modal popups produced horizontal clipping (`"...EMO SCHOOL"`) and vertical page-splitting across physical pages. Root-cause analysis revealed Base UI / Radix dialog popup centering (`fixed top-1/2 left-1/2 -translate-x-1/2`), viewport height locks (`max-h-[92vh] overflow-y-auto`), and `sm:max-w-sm` container class specificity interfered with Chromium's print page-box engine.
+- **Architectural Solution:** Completely separated Screen Preview (`print:hidden` inside modal) from Print Document. Attached print document to a top-level `<div id="report-card-print-root">` rendered directly to `document.body` via React `createPortal`.
+- **A4 Physical Specifications:** Set `@page { size: A4 portrait; margin: 8mm 6mm; }` giving `198mm` printable width and `281mm` (`1062px`) printable height. Compact print density styling reduces card height to `~528px` (~139mm), leaving `~534px` safety margin and guaranteeing single-page retention per student.
+- **Batch Isolation:** Each card is wrapped in `.report-card-page` with `break-inside: avoid` and inter-card `break-after: page`, producing clean 2-page print layout for 2-student batches without cross-card bleed or trailing blank pages.
+
+##### 8. Multi-Term Annual Compilation Semantics
+- Supports dynamic selection of 2 or more terms with custom weights summing to 100.00%.
+- Normalizes raw source marks across cycles with differing max marks (e.g. PT 50 vs Annual 80) to percentage before weighting.
+- Standardizes final annual weighted percentage onto a uniform 100.00-point scale (`annualScaledMarks`).
+- Explicit `ABSENT` in a term is evaluated as 0 marks contributing to the weighted average.
+- Missing / unrecorded required exam marks evaluate the annual compilation as `INCOMPLETE` with null percentage and grade, generating warning callouts identifying missing terms.
+- Forbids automatic weight re-normalization when required terms are missing.
+
+##### 9. Cohort CSV Tabulation
+- Tabulates 1 wide row per student with deterministic columns: Admission No, Student Name, Class, Section, Academic Year, Subject Marks & Grades, Grand Total Marks, Overall Percentage, Overall Grade, Pass/Fail Result, Attendance %, CBSE Compliance, Teacher Remarks.
+- Enforces RFC-4180 quotation escaping, UTF-8 BOM (`\uFEFF`) for Excel compatibility, and formula-injection protection (prefixing `=`, `+`, `-`, `@` with `'`).
+- Restricted strictly to staff (`ADMIN`, `TEACHER`). Emits `REPORT_CARDS_EXPORTED` audit log with privacy-preserving metadata only.
+
+##### 10. Remarks & Co-Scholastic Constraints
+- Scoped strictly by `schoolId + studentId + cycleKey`.
+- `authorId` derived automatically from session user context.
+- Co-scholastic grades validated against CBSE 3-point scale (`A`, `B`, `C`).
+- Emits `TEACHER_REMARK_UPDATED` and `CO_SCHOLASTIC_RECORDED` audit logs with zero qualitative comment logging.
+
+##### 11. Verification & Testing Matrix
+
+| Test Suite / Gate | Assertion / Checkpoint Count | Result | Details |
+| :--- | :--- | :--- | :--- |
+| **Stage 2 Integration Suite (`scripts/test-report-card-stage2.ts`)** | **52 / 52 Assertions** | **PASS** | RC2-01..52 passed in WSL2 verifying schemas, 7-query engine, multi-student isolation, CSV format/RBAC/injection/BOM, remarks CRUD, co-scholastic constraints, multi-term math, incomplete vs absent rules, audit logs, and clean database rollback. |
+| **Stage 1 Integration Suite (`scripts/test-report-card-stage1.ts`)** | **50 / 50 Assertions** | **PASS** | RC1-01..50 passed in WSL2 verifying dynamic compilation, cycle isolation, attendance denominator, decimal math, pass/fail rules, RBAC, print audit, and tenant isolation. |
+| **Modules 2–6 Regression Suites** | **200 / 200 Assertions** | **PASS** | Passed across Exams S2 (53/53), Exams S1 (54/54), Attendance S2 (30/30), Attendance S1 (24/24), Subjects S2 (17/17), Teachers S2 (13/13), Students S2 (9/9). |
+| **Cumulative Test Suite Total** | **302 / 302 Assertions** | **PASS** | 100% pass rate across entire core academic codebase. |
+| **Static Type Check** | `npx tsc --noEmit` | **PASS** | 0 TypeScript errors across codebase. |
+| **Targeted ESLint** | `npx eslint ...` | **PASS** | 0 errors, 0 warnings across all Stage 2 files. |
+| **Production Bundle Build** | `npm run build` | **PASS** | Successful build; 16 static pages generated without error. |
+| **Database Cleanup** | Test Script Teardown | **PASS** | 0 dangling temporary test rows. |
+
+##### 12. Manual Browser Verification Summary
+- **Admin Login:** PASS (`admin@demo.evoerp.in`)
+- **Report-Card Workspace Navigation:** PASS (`/dashboard/report-cards`)
+- **Single-Student Report Card View:** PASS (Aarav Patel report card modal opens cleanly)
+- **Single-Student A4 Print Preview:** PASS (Dedicated print root renders 1 page, complete school header "DEMO SCHOOL", no horizontal clipping, no vertical split)
+- **Two-Student Batch Print Preview:** PASS (Dedicated print root renders exactly 2 pages, Page 1 = Student 1 only, Page 2 = Student 2 only)
+- **Teacher Remarks Save & Persistence:** PASS (Saved remark persists upon reopening dialog)
+- **Co-Scholastic Grades Save & Persistence:** PASS (Saved A/B/C grades persist upon reopening dialog)
+- **CSV Export & Spreadsheet Inspection:** PASS (RFC-4180 CSV file downloads cleanly with BOM and formula protection)
+- **Annual Multi-Term Weighted Compilation:** PASS (40% PT1 + 60% Annual weighting compiles correctly with subject-level weighted percentages)
+
+##### 13. Current Status
+* **Phase 2 — Module 7 — Report Cards Stage 2:** **COMPLETE & FULLY VERIFIED**
+* **Phase 2 Overall Status:** **COMPLETE & FULLY VERIFIED**
+* **Next Development Target:** **Phase 3**
 
 
 

@@ -25,7 +25,7 @@ export function ReportCardModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 print:p-0 print:border-none print:shadow-none">
+      <DialogContent className="sm:max-w-5xl max-w-5xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 print:hidden">
         <DialogHeader className="print:hidden sr-only">
           <DialogTitle>Institutional Report Card Preview</DialogTitle>
           <DialogDescription>

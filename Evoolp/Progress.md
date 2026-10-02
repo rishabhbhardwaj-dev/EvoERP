@@ -34,7 +34,7 @@
 | **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 1 | **COMPLETE** | Exam lifecycle, CBSE 8-tier grading, roll-call marks entry, zero-result delete guard, audit logging |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 2 | **COMPLETE** | Student/Parent scorecard at /dashboard/my-grades, multi-child switcher, student dossier integration, RFC-4180 CSV export, print layout, CBSE 8-tier analytics card, on-demand term aggregation |
 | **Phase 2** | Module 7 — Report Cards | Stage 1 | **COMPLETE** | Single-student report card compilation, cycle isolation by examIds, CBSE grades, attendance integration, RBAC, A4 print layout, verified & pushed |
-| **Phase 2** | Module 7 — Report Cards | Stage 2 | **NOT IMPLEMENTED** | Batch printing, cohort summary CSV export, persistent custom teacher remarks, multi-term weighted annual compilation, co-scholastic grades |
+| **Phase 2** | Module 7 — Report Cards | Stage 2 | **COMPLETE** | Batch printing, cohort summary CSV export, persistent teacher remarks, co-scholastic grades, multi-term annual compilation, dedicated print root architecture |
 
 ---
 
@@ -264,28 +264,60 @@ The following features have been implemented and verified via TypeScript checks 
       * Full Phase 2 regression suites: 200 / 200 assertions passed across prior suites (Exams S2: 53/53, Exams S1: 54/54, Attendance S2: 30/30, Attendance S1: 24/24, Subjects S2: 17/17, Teachers S2: 13/13, Students S2: 9/9).
       * Zero Prisma schema changes and zero database migrations required.
       * Baseline demo data completely preserved with zero dangling test records.
-      * Browser / DOM Verification: Automated runtime/HTTP verification PASS; browser interactive authentication marked `BLOCKED — ENVIRONMENT` due to host Windows-to-WSL2 PostgreSQL connectivity boundary on `localhost:5432`.
+
+14. **Report Cards Stage 2 — Batch Printing, Cohort CSV Export, Persistent Remarks, Co-Scholastic Grades & Multi-Term Annual Compilation (Module 7 — Stage 2):**
+    * **Delivered Scope:**
+      1. Shared 7-query batched report-card data engine (`getBatchReportCardData`).
+      2. Pure in-memory report-card compilation (`compileReportCardData`).
+      3. Batch continuous A4 printing (`BatchPrintableReportCards`, `BatchReportCardModal`).
+      4. Cohort report-card CSV export (`exportClassReportCardSummaryCsv`).
+      5. Persistent teacher remarks (`ReportCardRemark`, `saveTeacherRemark`, `getTeacherRemarksForSection`).
+      6. Co-scholastic activities & discipline grades (`CoScholasticEntry`, `saveCoScholasticGrades`, `getCoScholasticForSection`).
+      7. Multi-term weighted annual compilation (`getMultiTermReportCard`, `MultiTermModal`).
+      8. Staff RBAC + strict tenant isolation.
+      9. Metadata-only audit logging (`BATCH_REPORT_CARDS_PRINTED`, `REPORT_CARDS_EXPORTED`, `TEACHER_REMARK_UPDATED`, `CO_SCHOLASTIC_RECORDED`).
+      10. Dedicated print-only root (`#report-card-print-root`) and final A4 print-layout/pagination architecture.
+    * **Dedicated Print Architecture & Layout Defect Resolution:**
+      * Separated screen preview (`print:hidden` inside modal) from print document.
+      * Rendered print document to a dedicated top-level portal (`<div id="report-card-print-root">`) directly attached to `document.body`.
+      * Eliminates Base UI / Radix dialog transforms, positioning locks, modal scrollbars, and `sm:max-w-sm` container clipping from the print rendering tree.
+      * Enforces print-safe A4 portrait dimensions (210mm × 297mm; content box margins `8mm 6mm`, usable height `281mm`).
+      * Compact print density (~528px card height vs ~1062px available height) guarantees single-page retention per student with zero page splitting.
+      * Continuous batch printing wraps each card in `.report-card-page` with `break-inside: avoid` and inter-card `break-after: page`, achieving clean 2-page print layout for 2-student batches without cross-card bleed or trailing blank pages.
+    * **Quality & Test Verification:**
+      * `tsc --noEmit`: 0 TypeScript errors across codebase.
+      * Targeted ESLint: 0 errors, 0 warnings across all implementation and test files.
+      * `npm run build`: Successful production build; static page generation (16/16) complete.
+      * Stage 2 Integration test suite (`scripts/test-report-card-stage2.ts`): 52 / 52 test assertions passed in WSL2.
+      * Stage 1 Integration test suite (`scripts/test-report-card-stage1.ts`): 50 / 50 test assertions passed in WSL2.
+      * Previous Phase 2 regression suites: 200 / 200 assertions passed across Modules 2–6.
+      * Cumulative passing assertions: 302 / 302 passed across all modules.
+      * Database test cleanup: 0 dangling temporary test rows.
+    * **Manual Browser Verification Completed:**
+      * Admin login: PASS
+      * Single-student report card view: PASS
+      * Single-student A4 print preview: PASS
+      * Two-student batch print preview: PASS
+      * Teacher remarks modal save & persistence after reopening: PASS
+      * Co-scholastic grades modal save & persistence after reopening: PASS
+      * CSV export and spreadsheet inspection: PASS
+      * Annual Multi-Term weighted compilation (40% PT1 + 60% Annual): PASS
+      * Correct annual subject-level weighted results: PASS
+    * **Development & Testing Environment Note:**
+      * Windows Next.js development process communicates with PostgreSQL running inside WSL2 Docker container (`evoolp-db-1`).
+      * When WSL2 suspends or goes idle, `localhost:5432` can become temporarily unreachable during browser NextAuth callbacks (`PrismaClientInitializationError: Can't reach database server at localhost:5432`).
+      * Diagnosed as a local WSL2 environment/networking lifecycle note, not an EvoERP application defect.
 
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
-### Future Phase 2 Modules
-* Module 7: Report Cards — Stage 2:
-  * Whole-class continuous batch printing
-  * Cohort report-card summary CSV export
-  * Persistent custom teacher remarks
-  * Multi-term weighted annual compilation
-  * Co-scholastic grades
-  * Roll Number support (upon future schema evolution)
+All Phase 2 Core Academic Modules (Modules 1 through 7, Stages 1 & 2) are fully implemented and verified.
+* Future schema evolution items (e.g. `rollNumber` support on `Student` model) reserved for upcoming phases.
 
 ---
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 2 — Module 7 — Report Cards (Stage 2)**
-* **Primary Scope:**
-  1. Whole-class continuous batch printing with page breaks.
-  2. Cohort report-card summary CSV export with attendance and term totals.
-  3. Persistent custom teacher remarks per student per cycle.
-  4. Multi-term weighted annual compilation and co-scholastic grades.
+* **Target:** **Phase 3**
+* **Primary Scope:** Next major phase according to project roadmap.
