@@ -374,6 +374,13 @@ The following features have been implemented and verified via TypeScript checks 
       * Static Type Check: `npx tsc --noEmit` $\rightarrow$ 0 TypeScript errors across codebase.
       * Targeted ESLint: 0 errors, 0 warnings across all notice files.
       * Regression suites: 105 / 105 passed across Attendance (24/24), Attendance Stage 2 (30/30), My Attendance (25/25), Finance Stage 1 (56/56).
+    * **Post-Checkpoint Development-Runtime Bug Fix:**
+      * A runtime issue was discovered after initial feature commit `d44487d` during manual browser verification (`Cannot read properties of undefined (reading 'findMany')` on `prisma.notice`).
+      * Symptom: `prisma.notice` evaluated to `undefined` on the `globalThis.prisma` instance in the active Next.js development server process.
+      * Root Cause: Next.js dev server retained a stale `PrismaClient` singleton instantiated prior to running `npx prisma generate` / migration.
+      * Fix: Implemented auto-healing Proxy in `src/lib/prisma.ts` that detects missing model delegates on stale dev singletons and automatically re-instantiates `PrismaClient` from disk.
+      * Browser Verification: Confirmed clean load and circular rendering across ADMIN, STUDENT (`student@demo.evoerp.in`), PARENT (`parent@demo.evoerp.in`), and TEACHER (`teacher@demo.evoerp.in`).
+      * Status: Notices feature remains COMPLETE (Bug-fix commit following commit `d44487d`).
 
 ---
 

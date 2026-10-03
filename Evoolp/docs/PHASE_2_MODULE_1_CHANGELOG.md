@@ -1527,5 +1527,12 @@ Implemented a dedicated, role-targeted Notices & Announcements workspace at `/da
 - **Phase 3 Finance Stage 1**: **COMPLETE & COMMITTED** (Commit `2f63a30`).
 - **Phase 3 Finance Stage 2**: **DEFERRED** for current delivery window (blueprint preserved).
 - **Phase 2 Module 5 Extension (My Attendance)**: **COMPLETE & COMMITTED** (Commit `e3e9c0d`).
-- **Phase 4 Module 1 (Notices & Announcements)**: **COMPLETE & FULLY VERIFIED**.
+- **Phase 4 Module 1 (Notices & Announcements)**: **COMPLETE & FULLY VERIFIED** (Commit `d44487d`).
 - **Persistent Local Demo Data**: Baseline academic and Finance Stage 1 demo records remain 100% intact.
+
+### 7. Post-Checkpoint Development-Runtime Fix
+- **Symptom**: `Cannot read properties of undefined (reading 'findMany')` when accessing `prisma.notice.findMany(...)`.
+- **Root Cause**: Next.js development server process (`npm run dev`) cached a `PrismaClient` singleton on `globalThis.prisma` instantiated prior to running `npx prisma generate` / migration `20261003103449_add_notices`.
+- **Resolution**: Enhanced `src/lib/prisma.ts` with a development-mode `Proxy` wrapper that detects when a model delegate property is `undefined` on the cached singleton, re-instantiates `PrismaClient` from disk, and auto-heals `globalThis.prisma`.
+- **Verification**: Browser verification passed for Admin, Student (`student@demo.evoerp.in`), Parent (`parent@demo.evoerp.in`), and Teacher (`teacher@demo.evoerp.in`). Automated integration test suite (`scripts/test-notices.ts`) passed **28 / 28**, and regression suites passed **105 / 105**.
+- **Status**: Follow-up bug-fix commit on top of commit `d44487d`. Notices feature remains COMPLETE.
