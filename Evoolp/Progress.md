@@ -7,9 +7,9 @@
 
 ## 1. Current State Overview
 
-* **Current Phase:** Phase 3 — Finance Management (Stage 1 Complete) / Phase 2 Extension (My Attendance Complete)
+* **Current Phase:** Phase 4 — Module 1: Notices & Announcements
 * **Active Branch:** `evoerp-foundation-fixes` (Tracking: `origin/evoerp-foundation-fixes`)
-* **Current HEAD Commit:** `2f63a30`
+* **Current HEAD Commit:** `e3e9c0d`
 * **Working Tree:** Clean (0 uncommitted changes)
 * **Workspace:** `D:\Dekstop\EvoERP`
 * **Environment:** Next.js 15.5.25 App Router, React 19, TypeScript 5.9.3 (strict), Prisma 6.19.3, NextAuth v5 beta
@@ -31,13 +31,15 @@
 | **Phase 2** | Module 4 — Subjects | Stage 2 | **COMPLETE** | Subject Detail Dossier, Edit modal, Safe Deletion with confirmation & snapshot |
 | **Phase 2** | Module 5 — Attendance | Stage 1 | **COMPLETE** | Daily Register, bulk marking, P/A/L/E/H states, 48h teacher guard, atomic upsert |
 | **Phase 2** | Module 5 — Attendance | Stage 2 | **COMPLETE** | Monthly matrix, CBSE 75% defaulters card, attendance workspace, CSV export, student dossier integration |
-| **Phase 2** | Module 5 — Attendance | Extension | **COMPLETE** | Student & Parent portal at `/dashboard/my-attendance`, ward switcher, CBSE 75% badge, history register |
+| **Phase 2** | Module 5 — Attendance | Extension | **COMPLETE** | Student & Parent portal at `/dashboard/my-attendance`, ward switcher, CBSE 75% badge, history register (Commit `e3e9c0d`) |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 1 | **COMPLETE** | Exam lifecycle, CBSE 8-tier grading, roll-call marks entry, zero-result delete guard, audit logging |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 2 | **COMPLETE** | Student/Parent scorecard at /dashboard/my-grades, multi-child switcher, student dossier integration, RFC-4180 CSV export, print layout, CBSE 8-tier analytics card, on-demand term aggregation |
 | **Phase 2** | Module 7 — Report Cards | Stage 1 | **COMPLETE** | Single-student report card compilation, cycle isolation by examIds, CBSE grades, attendance integration, RBAC, A4 print layout, verified & pushed |
 | **Phase 2** | Module 7 — Report Cards | Stage 2 | **COMPLETE** | Batch printing, cohort summary CSV export, persistent teacher remarks, co-scholastic grades, multi-term annual compilation, dedicated print root architecture |
 | **Phase 3** | Finance Management | Stage 1 | **COMPLETE** | Fee Categories, Master Fee Structures, Concessions & Cohort Allocation UI at `/dashboard/fees` (Commit `2f63a30`) |
 | **Phase 3** | Finance Management | Stage 2 | **DEFERRED** | Blueprint preserved for post-delivery continuation; deferred for current delivery window |
+| **Phase 4** | Module 1 — Notices & Announcements | Full | **COMPLETE** | Admin notice desk, role-targeted portal at `/dashboard/notices`, publish/expiry guards, "NEW" 48h badge, verified |
+
 
 
 ---
@@ -356,6 +358,23 @@ The following features have been implemented and verified via TypeScript checks 
       * Targeted ESLint: 0 errors, 0 warnings across all attendance files.
       * Attendance Stage 1 & Stage 2 Regression suites: 54 / 54 tests passed (zero regression).
 
+17. **Notices & Announcements (Phase 4 — Module 1):**
+    * **Delivered Scope:**
+      * School Notice Desk & Circular Board at `/dashboard/notices`.
+      * Admin Notice Management Workspace: Create, Edit, Toggle Status (`PUBLISHED`, `DRAFT`, `ARCHIVED`), Archive, and Delete notices.
+      * Role-Targeted Read-Only Circular Board: Serves `TEACHER`, `STUDENT`, and `PARENT` roles with strict server-side role filtering (`ALL`, `STUDENTS`, `PARENTS`, `TEACHERS`).
+      * Status & Publication Guards: Non-admin users see strictly `PUBLISHED` notices where `publishedAt <= NOW()` and `expiresAt` is null or $\ge$ TODAY.
+      * "NEW" 48-Hour Indicator Badge: Automatic visual highlight badge for notices published within the last 48 hours.
+      * Notice Reading Modal: Full-screen circular reading dialog.
+      * Search & Filter Controls: Keyword search by title/content, audience tab filters, and admin status tabs.
+      * Database Layer: Non-destructive Prisma migration (`20261003103449_add_notices`) creating `NoticeAudience` enum, `NoticeStatus` enum, and `Notice` table.
+      * Server-Side RBAC & Audit Logging: Admin-only mutations with audit events (`NOTICE_CREATED`, `NOTICE_UPDATED`, `NOTICE_DELETED`).
+    * **Automated Verification:**
+      * Integration Test Suite (`scripts/test-notices.ts`): 28 / 28 test assertions passed in WSL2.
+      * Static Type Check: `npx tsc --noEmit` $\rightarrow$ 0 TypeScript errors across codebase.
+      * Targeted ESLint: 0 errors, 0 warnings across all notice files.
+      * Regression suites: 105 / 105 passed across Attendance (24/24), Attendance Stage 2 (30/30), My Attendance (25/25), Finance Stage 1 (56/56).
+
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
@@ -367,5 +386,5 @@ The following features have been implemented and verified via TypeScript checks 
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 3 — Finance Management (Stage 2 Continuation) / Additional Student Portals**
-* **Status:** Phase 3 Finance Stage 1 (Commit `2f63a30`) and Phase 2 Module 5 Extension (My Attendance) are COMPLETE. All Finance Stage 1 demo data remains preserved.
+* **Target:** **Phase 3 — Finance Management (Stage 2 Continuation) / Post-Delivery Production Deployment**
+* **Status:** Phase 3 Finance Stage 1 (Commit `2f63a30`), Phase 2 Module 5 Extension (My Attendance Commit `e3e9c0d`), and Phase 4 Module 1 (Notices & Announcements) are COMPLETE. All Finance Stage 1 demo data remains preserved.

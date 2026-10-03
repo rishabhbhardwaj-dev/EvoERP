@@ -1491,3 +1491,41 @@ Implemented a dedicated student and parent attendance portal at `/dashboard/my-a
 - **Phase 3 Finance Stage 1**: **COMPLETE & COMMITTED** (Commit `2f63a30`).
 - **Phase 3 Finance Stage 2**: **DEFERRED** for current delivery window (October 10–12, 2026). The complete Finance Stage 2 blueprint remains fully preserved for continuation post-delivery.
 - **Persistent Local Demo Data**: Baseline academic and Finance Stage 1 demo records remain 100% intact.
+
+---
+
+## Phase 4 — Module 1: Notices & Announcements
+
+### 1. Overview
+Implemented a dedicated, role-targeted Notices & Announcements workspace at `/dashboard/notices`. This native module empowers school administrators to broadcast official circulars, event notifications, and role-specific notices while providing students, parents, and teachers with a clean, read-only circular board.
+
+### 2. Delivered Scope
+- **Admin Notice Workspace (`/dashboard/notices`)**: Full CRUD workspace for `ADMIN` users supporting notice creation, editing, status toggling (`PUBLISHED`, `DRAFT`, `ARCHIVED`), archiving, and safe deletion.
+- **Role-Targeted Read-Only Portal**: Serves `TEACHER`, `STUDENT`, and `PARENT` users with active published circulars. Non-admin users can only view notices targeted to `ALL` or their specific role (`TEACHERS`, `STUDENTS`, `PARENTS`).
+- **Publication & Expiry Rules**: Non-admin views strictly filter out `DRAFT` notices, future-dated `publishedAt` notices, and expired notices (`expiresAt < TODAY`).
+- **"NEW" 48-Hour Indicator Badge**: Zero-schema-cost visual highlight badge for notices published within the last 48 hours.
+- **Notice Reading Modal**: Interactive modal for reading complete notice text.
+- **Search & Filters**: Title/content keyword search, audience filter pills, and admin status tabs.
+
+### 3. Database Schema & Migration
+- **Migration**: `20261003103449_add_notices`
+- **New Enums**: `NoticeAudience` (`ALL`, `STUDENTS`, `PARENTS`, `TEACHERS`), `NoticeStatus` (`DRAFT`, `PUBLISHED`, `ARCHIVED`).
+- **New Model**: `Notice` (`id`, `schoolId`, `title`, `content`, `audience`, `status`, `publishedAt`, `expiresAt`, `createdById`, `createdAt`, `updatedAt`).
+
+### 4. RBAC & Security
+- **Tenant Isolation**: `requireTenant()` derives `schoolId` and `userId` from the authenticated session.
+- **Server-Side Authorization**: All mutations (`createNotice`, `updateNotice`, `deleteNotice`) require `ctx.role === "ADMIN"`. Non-admin role queries are strictly scoped on the server side to prevent IDOR or audience bypassing.
+- **Audit Logging**: Logs audit events (`NOTICE_CREATED`, `NOTICE_UPDATED`, `NOTICE_DELETED`).
+
+### 5. Automated Verification
+- **Integration Test Suite (`scripts/test-notices.ts`)**: **28 / 28 test assertions passed** in WSL2.
+- **Static Type Check**: `npx tsc --noEmit` $\rightarrow$ **0 TypeScript errors**.
+- **Targeted ESLint**: **0 errors, 0 warnings** across all notice files.
+- **Regression Verification**: 105 / 105 passed across Attendance Stage 1 (24/24), Attendance Stage 2 (30/30), My Attendance (25/25), and Finance Stage 1 (56/56).
+
+### 6. Delivery Cycle & Historical Status
+- **Phase 3 Finance Stage 1**: **COMPLETE & COMMITTED** (Commit `2f63a30`).
+- **Phase 3 Finance Stage 2**: **DEFERRED** for current delivery window (blueprint preserved).
+- **Phase 2 Module 5 Extension (My Attendance)**: **COMPLETE & COMMITTED** (Commit `e3e9c0d`).
+- **Phase 4 Module 1 (Notices & Announcements)**: **COMPLETE & FULLY VERIFIED**.
+- **Persistent Local Demo Data**: Baseline academic and Finance Stage 1 demo records remain 100% intact.

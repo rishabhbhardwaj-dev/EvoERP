@@ -107,6 +107,19 @@ enum FeeAllocationStatus {
   CANCELLED
 }
 
+enum NoticeAudience {
+  ALL
+  STUDENTS
+  PARENTS
+  TEACHERS
+}
+
+enum NoticeStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
 // ──────────────────────────── Models ───────────────────────────
 
 model School {
@@ -139,6 +152,7 @@ model School {
   feeStructureItems   FeeStructureItem[]
   feeDiscounts        FeeDiscount[]
   studentFeeItems     StudentFeeItem[]
+  notices             Notice[]
 
   @@index([status])
 }
@@ -166,6 +180,7 @@ model User {
   authoredRemarks          ReportCardRemark[]
   authoredCoScholastics    CoScholasticEntry[]
   assignedFeeItems         StudentFeeItem[]    @relation("FeeAssigner")
+  authoredNotices          Notice[]            @relation("NoticeAuthor")
 
   @@unique([schoolId, email])
   @@index([schoolId])
@@ -651,4 +666,25 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@index([schoolId])
+}
+
+model Notice {
+  id          String         @id @default(cuid())
+  schoolId    String
+  title       String
+  content     String         @db.Text
+  audience    NoticeAudience @default(ALL)
+  status      NoticeStatus   @default(PUBLISHED)
+  publishedAt DateTime       @default(now())
+  expiresAt   DateTime?      @db.Date
+  createdById String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  school    School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdBy User   @relation("NoticeAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([schoolId])
+  @@index([schoolId, status, audience])
+  @@index([schoolId, publishedAt])
 }
