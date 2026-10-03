@@ -1441,7 +1441,53 @@ For ongoing demonstration and testing, the following local demo records were int
 - **Stage 1 Complete:** Fee Category Master, Master Fee Structures, Fee Structure Line Items, Fee Discount/Concession Policies, Cohort Fee Allocation, Student Fee Allocation Read View, RTE Default Waiver Engine, Duplicate Protection, Snapshot Immutability, Staff RBAC.
 - **Stage 2 Deferred:** Payment transactions, invoicing/demands, payment receipts / PDF generation, defaulter tracking, late fees, student/parent `/dashboard/my-fees` portal, financial CSV export/reconciliation, and online payment processing (Razorpay).
 
-- **Phase 3 — Stage 1 (Finance Management):** **COMPLETE & FULLY VERIFIED**
-- **Next Development Target:** **Phase 3 — Stage 2 (Billing, Invoices, Payments, Receipts & Fee Portal)**
+#### 13. Current Status
+- **Phase 3 — Stage 1 (Finance Management):** **COMPLETE & FULLY VERIFIED** (Commit `2f63a30`)
+- **Phase 3 — Stage 2 (Finance Management):** **DEFERRED** for current delivery cycle (blueprint preserved)
+- **Phase 2 — Module 5 Extension (My Attendance):** **COMPLETE & FULLY VERIFIED**
 
+---
 
+## Phase 2 — Module 5 Extension: My Attendance (Student & Parent Portal)
+
+### 1. Overview
+Implemented a dedicated student and parent attendance portal at `/dashboard/my-attendance`. This extension exposes a student's personal daily roll call history, working session counts, attended days, attendance rate percentage, and CBSE 75% examination eligibility status.
+
+### 2. Delivered Scope
+- **Student & Parent Read-Only Portal (`/dashboard/my-attendance`)**: Personal attendance view accessible strictly to `STUDENT` and `PARENT` roles.
+- **Parent Multi-Child Ward Switcher**: When logged in as a `PARENT`, top banner dynamically displays a ward switcher dropdown allowing seamless switching between linked active children (`parentUserId`).
+- **Summary Metrics**:
+  - Attendance Rate (%): Overall attendance percentage calculated using $P + L + 0.5 \times H$.
+  - CBSE 75% Compliance Pill: Highlights "CBSE Compliant" ($\ge 75\%$) vs "Shortage Risk" ($< 75\%$).
+  - Present Count: Total full-day present sessions.
+  - Absent Count: Total unexcused absent sessions.
+  - Exceptions Breakdown: Itemized counts for Late ($L$), Half-Day ($H$), and Excused ($E$) sessions.
+- **Attendance History Register**: Itemized table displaying session date (`YYYY-MM-DD`), day of week (`Mon`, `Tue`, etc.), class/section, status badge, and teacher remarks.
+- **Month Filter**: Month selection dropdown for filtering records by month.
+
+### 3. Data & Calculation Policy
+- **Formula**:
+  $$\text{Attended Days} = \text{PresentCount} + \text{LateCount} + (0.5 \times \text{HalfDayCount})$$
+  $$\text{Total Working Sessions} = \text{Count of AttendanceRecord entries for student}$$
+  $$\text{Percentage} = \text{Math.round}\left(\frac{\text{Attended Days}}{\text{Total Sessions}} \times 100\right)$$
+- **Status Values**:
+  - `PRESENT`: 1.0 day attended
+  - `LATE`: 1.0 day attended
+  - `HALF_DAY`: 0.5 day attended
+  - `ABSENT`: 0.0 day attended
+  - `EXCUSED`: 0.0 day added to numerator; session included in total working denominator.
+
+### 4. Security & Tenant Isolation
+- **Server-Side Identity Resolution**: User identity (`userId`, `schoolId`, `role`) derived strictly from authenticated session via `requireTenant()`.
+- **IDOR Protection**: Client-supplied `studentId` parameters are never trusted. For `PARENT` users, `studentId` is strictly verified against children linked via `student.parentUserId`.
+
+### 5. Automated & Regression Verification
+- **Integration Test Suite (`scripts/test-my-attendance.ts`)**: **25 / 25 test assertions passed** in WSL2.
+- **Static Type Check**: `npx tsc --noEmit` $\rightarrow$ **0 TypeScript errors**.
+- **Targeted ESLint**: **0 errors, 0 warnings** across all attendance files.
+- **Regression Suites**: Attendance Stage 1 (24/24) and Attendance Stage 2 (30/30) passed with zero regression.
+
+### 6. Delivery Cycle & Deferral Status
+- **Phase 3 Finance Stage 1**: **COMPLETE & COMMITTED** (Commit `2f63a30`).
+- **Phase 3 Finance Stage 2**: **DEFERRED** for current delivery window (October 10–12, 2026). The complete Finance Stage 2 blueprint remains fully preserved for continuation post-delivery.
+- **Persistent Local Demo Data**: Baseline academic and Finance Stage 1 demo records remain 100% intact.

@@ -100,3 +100,16 @@ export type StudentAttendanceSummaryQueryInput = z.infer<
   typeof studentAttendanceSummaryQuerySchema
 >;
 
+/**
+ * Query schema for student/parent "My Attendance" portal.
+ */
+export const myAttendanceQuerySchema = z.object({
+  studentId: z.string().optional(),
+  academicYear: z
+    .string()
+    .regex(/^\d{4}-\d{4}$/, "Invalid academic year format (e.g. 2025-2026).")
+    .optional(),
+  month: z.coerce.number().int().min(1).max(12).optional(),
+});
+
+export type MyAttendanceQueryInput = z.infer<typeof myAttendanceQuerySchema>;

@@ -9,10 +9,12 @@ import {
   getRegisterQuerySchema,
   monthlyAttendanceQuerySchema,
   studentAttendanceSummaryQuerySchema,
+  myAttendanceQuerySchema,
   type SaveAttendanceRegisterInput,
   type GetRegisterQueryInput,
   type MonthlyAttendanceQueryInput,
   type StudentAttendanceSummaryQueryInput,
+  type MyAttendanceQueryInput,
   type AttendanceStatusType,
 } from "@/lib/validations/attendance";
 import type { ActionResult } from "./classes";
@@ -1092,6 +1094,229 @@ export async function exportMonthlyAttendanceCsv(
     return {
       success: false,
       error: "An unexpected error occurred while generating the CSV export.",
+    };
+  }
+}
+
+export interface ChildProfileOption {
+  id: string;
+  name: string;
+  admissionNumber: string;
+  className: string;
+  sectionName: string;
+}
+
+export interface MyAttendanceSessionRow {
+  id: string;
+  date: string;
+  dayOfWeek: string;
+  className: string;
+  sectionName: string;
+  status: AttendanceStatusType;
+  remarks: string | null;
+}
+
+export interface MyAttendanceData {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  className: string;
+  sectionName: string;
+  academicYear: string;
+  totalSessions: number;
+  presentCount: number;
+  absentCount: number;
+  lateCount: number;
+  excusedCount: number;
+  halfDayCount: number;
+  attendedDays: number;
+  percentage: number;
+  isDefaulter: boolean;
+  sessions: MyAttendanceSessionRow[];
+  childrenProfiles?: ChildProfileOption[];
+}
+
+/**
+ * Fetches attendance records for the currently authenticated student
+ * or ward (if role is PARENT). Enforces strict tenant and identity isolation.
+ */
+export async function getMyAttendance(
+  input?: MyAttendanceQueryInput
+): Promise<ActionResult<MyAttendanceData>> {
+  try {
+    const ctx = await requireTenant();
+
+    if (ctx.role !== "STUDENT" && ctx.role !== "PARENT") {
+      return {
+        success: false,
+        error: "Unauthorized: Only students and parents can access the personal attendance portal.",
+      };
+    }
+
+    const parsed = myAttendanceQuerySchema.safeParse(input ?? {});
+    if (!parsed.success) {
+      const firstError = parsed.error.issues[0]?.message ?? "Invalid query parameters.";
+      return { success: false, error: firstError };
+    }
+
+    const { studentId, academicYear, month } = parsed.data;
+
+    let targetStudent;
+    let childrenProfiles: ChildProfileOption[] = [];
+
+    if (ctx.role === "STUDENT") {
+      targetStudent = await prisma.student.findFirst({
+        where: {
+          schoolId: ctx.schoolId,
+          userId: ctx.userId,
+          status: "ACTIVE",
+        },
+        include: {
+          enrollments: {
+            where: { status: "ACTIVE" },
+            include: { class: true, section: true },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+        },
+      });
+
+      if (!targetStudent) {
+        return {
+          success: false,
+          error: "No active student record is associated with your student account.",
+        };
+      }
+    } else {
+      // Role is PARENT: fetch all active children linked to parentUserId
+      const children = await prisma.student.findMany({
+        where: {
+          schoolId: ctx.schoolId,
+          parentUserId: ctx.userId,
+          status: "ACTIVE",
+        },
+        include: {
+          enrollments: {
+            where: { status: "ACTIVE" },
+            include: { class: true, section: true },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+        },
+        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      });
+
+      if (!children || children.length === 0) {
+        return {
+          success: false,
+          error: "No active student records are linked to your parent account.",
+        };
+      }
+
+      childrenProfiles = children.map((c) => ({
+        id: c.id,
+        name: `${c.firstName} ${c.lastName}`.trim(),
+        admissionNumber: c.admissionNumber,
+        className: c.enrollments[0]?.class.name ?? "—",
+        sectionName: c.enrollments[0]?.section.name ?? "—",
+      }));
+
+      if (studentId) {
+        const found = children.find((c) => c.id === studentId);
+        targetStudent = found ?? children[0];
+      } else {
+        targetStudent = children[0];
+      }
+    }
+
+    const activeEnrollment = targetStudent.enrollments[0];
+    const targetAcademicYear = academicYear ?? activeEnrollment?.academicYear;
+
+    // Fetch all attendance records for this student
+    const records = await prisma.attendanceRecord.findMany({
+      where: {
+        schoolId: ctx.schoolId,
+        studentId: targetStudent.id,
+        ...(targetAcademicYear ? { session: { academicYear: targetAcademicYear } } : {}),
+      },
+      include: {
+        session: {
+          include: {
+            class: { select: { name: true } },
+            section: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: {
+        session: { date: "desc" },
+      },
+    });
+
+    const filteredRecords = month
+      ? records.filter((r) => r.session.date.getUTCMonth() + 1 === month)
+      : records;
+
+    const totalSessions = filteredRecords.length;
+    let presentCount = 0;
+    let absentCount = 0;
+    let lateCount = 0;
+    let excusedCount = 0;
+    let halfDayCount = 0;
+
+    for (const r of filteredRecords) {
+      if (r.status === "PRESENT") presentCount++;
+      else if (r.status === "ABSENT") absentCount++;
+      else if (r.status === "LATE") lateCount++;
+      else if (r.status === "EXCUSED") excusedCount++;
+      else if (r.status === "HALF_DAY") halfDayCount++;
+    }
+
+    const attendedDays = presentCount + lateCount + halfDayCount * 0.5;
+    const percentage = totalSessions > 0 ? Math.round((attendedDays / totalSessions) * 100) : 0;
+    const isDefaulter = totalSessions > 0 && percentage < 75;
+
+    const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const sessions: MyAttendanceSessionRow[] = filteredRecords.map((r) => {
+      const dateStr = formatUtcDateString(r.session.date);
+      const dayOfWeek = DAYS[r.session.date.getUTCDay()];
+      return {
+        id: r.id,
+        date: dateStr,
+        dayOfWeek,
+        className: r.session.class.name,
+        sectionName: r.session.section.name,
+        status: r.status as AttendanceStatusType,
+        remarks: r.remarks,
+      };
+    });
+
+    return {
+      success: true,
+      data: {
+        studentId: targetStudent.id,
+        studentName: `${targetStudent.firstName} ${targetStudent.lastName}`.trim(),
+        admissionNumber: targetStudent.admissionNumber,
+        className: activeEnrollment?.class.name ?? "—",
+        sectionName: activeEnrollment?.section.name ?? "—",
+        academicYear: targetAcademicYear ?? "—",
+        totalSessions,
+        presentCount,
+        absentCount,
+        lateCount,
+        excusedCount,
+        halfDayCount,
+        attendedDays,
+        percentage,
+        isDefaulter,
+        sessions,
+        childrenProfiles: ctx.role === "PARENT" ? childrenProfiles : undefined,
+      },
+    };
+  } catch (err) {
+    console.error("Error fetching my attendance:", err);
+    return {
+      success: false,
+      error: "An unexpected error occurred while loading your attendance records.",
     };
   }
 }

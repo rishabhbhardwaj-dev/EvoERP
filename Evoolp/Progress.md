@@ -7,10 +7,10 @@
 
 ## 1. Current State Overview
 
-* **Current Phase:** Phase 3 — Finance Management
+* **Current Phase:** Phase 3 — Finance Management (Stage 1 Complete) / Phase 2 Extension (My Attendance Complete)
 * **Active Branch:** `evoerp-foundation-fixes` (Tracking: `origin/evoerp-foundation-fixes`)
-* **Current HEAD Commit:** `0a494d3`
-* **Working Tree:** Clean (0 uncommitted changes, verified 2026-10-01)
+* **Current HEAD Commit:** `2f63a30`
+* **Working Tree:** Clean (0 uncommitted changes)
 * **Workspace:** `D:\Dekstop\EvoERP`
 * **Environment:** Next.js 15.5.25 App Router, React 19, TypeScript 5.9.3 (strict), Prisma 6.19.3, NextAuth v5 beta
 * **Database:** PostgreSQL 16 Alpine container (`evoolp-db-1`) on port 5432 in WSL2
@@ -31,11 +31,14 @@
 | **Phase 2** | Module 4 — Subjects | Stage 2 | **COMPLETE** | Subject Detail Dossier, Edit modal, Safe Deletion with confirmation & snapshot |
 | **Phase 2** | Module 5 — Attendance | Stage 1 | **COMPLETE** | Daily Register, bulk marking, P/A/L/E/H states, 48h teacher guard, atomic upsert |
 | **Phase 2** | Module 5 — Attendance | Stage 2 | **COMPLETE** | Monthly matrix, CBSE 75% defaulters card, attendance workspace, CSV export, student dossier integration |
+| **Phase 2** | Module 5 — Attendance | Extension | **COMPLETE** | Student & Parent portal at `/dashboard/my-attendance`, ward switcher, CBSE 75% badge, history register |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 1 | **COMPLETE** | Exam lifecycle, CBSE 8-tier grading, roll-call marks entry, zero-result delete guard, audit logging |
 | **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 2 | **COMPLETE** | Student/Parent scorecard at /dashboard/my-grades, multi-child switcher, student dossier integration, RFC-4180 CSV export, print layout, CBSE 8-tier analytics card, on-demand term aggregation |
 | **Phase 2** | Module 7 — Report Cards | Stage 1 | **COMPLETE** | Single-student report card compilation, cycle isolation by examIds, CBSE grades, attendance integration, RBAC, A4 print layout, verified & pushed |
 | **Phase 2** | Module 7 — Report Cards | Stage 2 | **COMPLETE** | Batch printing, cohort summary CSV export, persistent teacher remarks, co-scholastic grades, multi-term annual compilation, dedicated print root architecture |
-| **Phase 3** | Finance Management | Stage 1 | **COMPLETE** | Fee Categories, Master Fee Structures, Concessions & Cohort Allocation UI at `/dashboard/fees` |
+| **Phase 3** | Finance Management | Stage 1 | **COMPLETE** | Fee Categories, Master Fee Structures, Concessions & Cohort Allocation UI at `/dashboard/fees` (Commit `2f63a30`) |
+| **Phase 3** | Finance Management | Stage 2 | **DEFERRED** | Blueprint preserved for post-delivery continuation; deferred for current delivery window |
+
 
 ---
 
@@ -337,15 +340,32 @@ The following features have been implemented and verified via TypeScript checks 
       * `STUDENT` and `PARENT` are server-gated away from `/dashboard/fees`.
       * `/dashboard/my-fees` is NOT exposed yet in Stage 1.
 
+16. **My Attendance — Student & Parent Personal Portal (Module 5 Extension):**
+    * **Delivered Scope:**
+      * Student/Parent read-only attendance portal at `/dashboard/my-attendance`.
+      * Parent multi-child ward switcher dropdown allowing seamless switching between linked active wards.
+      * Summary metric cards: Overall Attendance Rate %, Total Working Sessions, Attended Days Count ($P + L + 0.5 \times H$), Present Count, Absent Count, Exceptions breakdown (Late, Half-Day, Excused).
+      * CBSE 75% examination eligibility pill badge ("CBSE Compliant" vs "Shortage Risk").
+      * Attendance History Register table listing session date, day of week, class & section, status badge (`PRESENT`, `ABSENT`, `LATE`, `HALF_DAY`, `EXCUSED`), and teacher remarks.
+      * Month filter dropdown for filtering attendance logs by month.
+      * Server action `getMyAttendance()` and validation schema `myAttendanceQuerySchema`.
+      * Strict security & tenant isolation: session `userId` / `parentUserId` resolved server-side via `requireTenant()`; client `studentId` parameters strictly verified against parent ownership to prevent IDOR.
+    * **Automated Verification:**
+      * Integration Test Suite (`scripts/test-my-attendance.ts`): 25 / 25 test assertions passed in WSL2.
+      * Static Type Check: `npx tsc --noEmit` $\rightarrow$ 0 TypeScript errors across codebase.
+      * Targeted ESLint: 0 errors, 0 warnings across all attendance files.
+      * Attendance Stage 1 & Stage 2 Regression suites: 54 / 54 tests passed (zero regression).
+
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
 * **Phase 3 Stage 2 Deferred Scope:** Payment transactions, invoicing/demands, payment receipts / PDF generation, defaulter tracking, late fees, student/parent `/dashboard/my-fees` portal, financial CSV export/reconciliation, and online payment processing (Razorpay).
+* **Note on Deferral:** Finance Stage 2 is explicitly deferred for the current delivery cycle (October 10–12, 2026 delivery window) to prioritize low-risk student portal features. The complete Finance Stage 2 blueprint remains preserved for continuation post-delivery.
 
 ---
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 3 — Finance Management (Stage 2)**
-* **Primary Scope:** Billing, Invoices, Payments, Receipts & Fee Portal
+* **Target:** **Phase 3 — Finance Management (Stage 2 Continuation) / Additional Student Portals**
+* **Status:** Phase 3 Finance Stage 1 (Commit `2f63a30`) and Phase 2 Module 5 Extension (My Attendance) are COMPLETE. All Finance Stage 1 demo data remains preserved.
