@@ -24,12 +24,13 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Fees", href: "/dashboard/fees", roles: ["ADMIN", "TEACHER"] },
   { label: "My Attendance", href: "/dashboard/my-attendance", roles: ["STUDENT", "PARENT"] },
   { label: "My Grades", href: "/dashboard/my-grades", roles: ["STUDENT", "PARENT"] },
-  { label: "My Fees", href: "/dashboard/my-fees", roles: ["STUDENT", "PARENT"] },
+  // Deferred / Unbuilt routes — commented out for current delivery window:
+  // { label: "My Fees", href: "/dashboard/my-fees", roles: ["STUDENT", "PARENT"] },
   { label: "Notices", href: "/dashboard/notices", roles: ["ADMIN", "TEACHER", "STUDENT", "PARENT"] },
-  { label: "Users", href: "/dashboard/users", roles: ["ADMIN"] },
+  // { label: "Users", href: "/dashboard/users", roles: ["ADMIN"] },
   { label: "Reports", href: "/dashboard/reports", roles: ["ADMIN", "TEACHER"] },
-  { label: "Audit Log", href: "/dashboard/audit", roles: ["ADMIN"] },
-  { label: "Settings", href: "/dashboard/settings", roles: ["ADMIN"] },
+  // { label: "Audit Log", href: "/dashboard/audit", roles: ["ADMIN"] },
+  // { label: "Settings", href: "/dashboard/settings", roles: ["ADMIN"] },
 ];
 
 export function navForRole(role: AppRole): NavItem[] {

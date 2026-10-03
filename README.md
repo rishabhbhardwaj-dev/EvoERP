@@ -197,7 +197,7 @@ npm run lint
 
 ## Seeded Demo Environment
 
-For evaluation, the local database seeds a standard demo school tenant (`DEMO001`):
+For evaluation, the local database seeds a standard demo school tenant (`DEMO001`) with password `Password123!`:
 
 | Role | Demo Username / Email | Verification Scope |
 | :--- | :--- | :--- |
