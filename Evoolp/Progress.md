@@ -382,16 +382,32 @@ The following features have been implemented and verified via TypeScript checks 
       * Browser Verification: Confirmed clean load and circular rendering across ADMIN, STUDENT (`student@demo.evoerp.in`), PARENT (`parent@demo.evoerp.in`), and TEACHER (`teacher@demo.evoerp.in`).
       * Status: Notices feature remains COMPLETE (Bug-fix commit following commit `d44487d`).
 
+18. **Basic Reports & Dashboard Analytics (Phase 4 — Module 2):**
+    * **Delivered Scope:**
+      * Dedicated Reports & Institutional Analytics Workspace at `/dashboard/reports`.
+      * Tabbed Reports Workspace: Enrollment Report, Attendance Analytics, and Academic Performance Summary.
+      * Enrollment Metrics: Total enrolled, active/inactive student count, class-wise distribution, section-wise distribution, gender ratio.
+      * Attendance Analytics: Overall attendance %, session counts, Present/Absent/Late/Half-Day/Excused breakdown, class matrix, and CBSE Shortage Risk Register (<75% cutoff).
+      * Academic Performance: Exams conducted, overall pass %, average mark %, CBSE 8-point grade distribution (A1–E), subject performance matrix.
+      * Role-Based Access: Full read-only access for `ADMIN` and `TEACHER` roles; `STUDENT` and `PARENT` redirected to personal portals (`/dashboard/my-attendance`).
+      * Admin RFC-4180 CSV Export: CSV download with UTF-8 BOM (`\uFEFF`) for Enrollment, Attendance, and Academic reports (restricted to `ADMIN`).
+      * Database Layer: Zero schema modifications (100% derived from existing models).
+    * **Automated Verification:**
+      * Integration Test Suite (`scripts/test-reports.ts`): **25 / 25 test assertions passed** in WSL2.
+      * Static Type Check: `npx tsc --noEmit` $\rightarrow$ **0 TypeScript errors**.
+      * Targeted ESLint: **0 errors, 0 warnings** across all report files.
+      * Regression Verification: **105 / 105 passed** across Attendance (24/24), Attendance Stage 2 (30/30), My Attendance (25/25), Notices (28/28).
+
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
 * **Phase 3 Stage 2 Deferred Scope:** Payment transactions, invoicing/demands, payment receipts / PDF generation, defaulter tracking, late fees, student/parent `/dashboard/my-fees` portal, financial CSV export/reconciliation, and online payment processing (Razorpay).
-* **Note on Deferral:** Finance Stage 2 is explicitly deferred for the current delivery cycle (October 10–12, 2026 delivery window) to prioritize low-risk student portal features. The complete Finance Stage 2 blueprint remains preserved for continuation post-delivery.
+* **Note on Deferral:** Finance Stage 2 is explicitly deferred for the current delivery cycle (October 10–12, 2026 delivery window) to prioritize low-risk reporting and student portal features. The complete Finance Stage 2 blueprint remains preserved for continuation post-delivery.
 
 ---
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 3 — Finance Management (Stage 2 Continuation) / Post-Delivery Production Deployment**
-* **Status:** Phase 3 Finance Stage 1 (Commit `2f63a30`), Phase 2 Module 5 Extension (My Attendance Commit `e3e9c0d`), and Phase 4 Module 1 (Notices & Announcements) are COMPLETE. All Finance Stage 1 demo data remains preserved.
+* **Target:** **Phase 4 Final Delivery & Production Verification / Post-Delivery Stage 2 Continuation**
+* **Status:** Phase 3 Finance Stage 1 (Commit `2f63a30`), Phase 2 Module 5 Extension (My Attendance Commit `e3e9c0d`), Phase 4 Module 1 (Notices & Announcements Commits `d44487d` & `965c6f2`), and Phase 4 Module 2 (Basic Reports & Analytics) are COMPLETE & VERIFIED. All Finance Stage 1 demo data remains preserved.

@@ -1527,7 +1527,8 @@ Implemented a dedicated, role-targeted Notices & Announcements workspace at `/da
 - **Phase 3 Finance Stage 1**: **COMPLETE & COMMITTED** (Commit `2f63a30`).
 - **Phase 3 Finance Stage 2**: **DEFERRED** for current delivery window (blueprint preserved).
 - **Phase 2 Module 5 Extension (My Attendance)**: **COMPLETE & COMMITTED** (Commit `e3e9c0d`).
-- **Phase 4 Module 1 (Notices & Announcements)**: **COMPLETE & FULLY VERIFIED** (Commit `d44487d`).
+- **Phase 4 Module 1 (Notices & Announcements)**: **COMPLETE & FULLY VERIFIED** (Commits `d44487d` & `965c6f2`).
+- **Phase 4 Module 2 (Basic Reports & Analytics)**: **COMPLETE & FULLY VERIFIED**.
 - **Persistent Local Demo Data**: Baseline academic and Finance Stage 1 demo records remain 100% intact.
 
 ### 7. Post-Checkpoint Development-Runtime Fix
@@ -1536,3 +1537,29 @@ Implemented a dedicated, role-targeted Notices & Announcements workspace at `/da
 - **Resolution**: Enhanced `src/lib/prisma.ts` with a development-mode `Proxy` wrapper that detects when a model delegate property is `undefined` on the cached singleton, re-instantiates `PrismaClient` from disk, and auto-heals `globalThis.prisma`.
 - **Verification**: Browser verification passed for Admin, Student (`student@demo.evoerp.in`), Parent (`parent@demo.evoerp.in`), and Teacher (`teacher@demo.evoerp.in`). Automated integration test suite (`scripts/test-notices.ts`) passed **28 / 28**, and regression suites passed **105 / 105**.
 - **Status**: Follow-up bug-fix commit on top of commit `d44487d`. Notices feature remains COMPLETE.
+
+---
+
+## MODULE 19 — PHASE 4 MODULE 2: BASIC REPORTS & DASHBOARD ANALYTICS
+
+### 1. Architectural Summary
+Implemented a dedicated, role-targeted Reports & Institutional Analytics workspace at `/dashboard/reports`. This module equips school administrators and teachers with comprehensive summaries across Enrollment, Attendance Analytics, and Academic Performance while requiring **zero database schema modifications**.
+
+### 2. Delivered Scope
+- **Reports Workspace (`/dashboard/reports`)**: Tabbed analytics interface featuring 3 primary reports:
+  - **Enrollment Report**: Total student count, active vs inactive breakdown, class-wise distribution, section-wise distribution, gender ratio.
+  - **Attendance Analytics**: Overall attendance %, session counts, Present/Absent/Late/Half-Day/Excused breakdown, class matrix, and CBSE Shortage Risk Register (<75% cutoff).
+  - **Academic Performance**: Exams conducted, total results processed, overall pass %, average mark %, CBSE 8-point grade distribution (A1–E), subject performance matrix.
+- **Role-Based Access Control**:
+  - `ADMIN` & `TEACHER`: Full read-only access to `/dashboard/reports`.
+  - `STUDENT` & `PARENT`: Automatically redirected to their personal portals (`/dashboard/my-attendance`).
+- **Admin RFC-4180 CSV Export**: One-click CSV export with UTF-8 BOM (`\uFEFF`) for Enrollment, Attendance, and Academic reports (restricted to `ADMIN`).
+
+### 3. Database Schema
+- **Schema Modifications**: **ZERO (0)**. All metrics are 100% derived from existing models (`Student`, `Enrollment`, `Class`, `Section`, `AttendanceSession`, `AttendanceRecord`, `Exam`, `ExamResult`).
+
+### 4. Automated & Regression Verification
+- **Integration Test Suite (`scripts/test-reports.ts`)**: **25 / 25 test assertions passed** in WSL2.
+- **Static Type Check**: `npx tsc --noEmit` $\rightarrow$ **0 TypeScript errors**.
+- **Targeted ESLint**: **0 errors, 0 warnings** across all report files.
+- **Regression Verification**: **105 / 105 passed** across Attendance (24/24), Attendance Stage 2 (30/30), My Attendance (25/25), Notices (28/28).
