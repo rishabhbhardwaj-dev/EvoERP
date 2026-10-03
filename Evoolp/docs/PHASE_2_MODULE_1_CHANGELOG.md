@@ -1346,5 +1346,102 @@ Stage 2 completes the Report Cards module by delivering whole-class continuous b
 * **Phase 2 Overall Status:** **COMPLETE & FULLY VERIFIED**
 * **Next Development Target:** **Phase 3**
 
+---
+
+## Phase 3 — Finance Management
+
+### Stage 1 — Fee Masters, Fee Structures, Concessions & Cohort Allocation
+
+#### 1. Overview & Objectives
+Phase 3 Stage 1 establishes the financial management infrastructure for EvoERP. It enables school administrators to define fee category heads, construct master fee structure templates for classes and sections, configure concession/discount policies (including default 100% Right to Education Act waivers for RTE candidate students), execute automated cohort-wide fee allocations with duplicate protection and Decimal-safe precision, and review allocated student fee records.
+
+#### 2. Database Schema & Migration
+1. **Migration `20261003065046_add_fee_management_stage1`:**
+   - **`FeeCategory` Model:** Master fee classification heads (`TUIT`, `DEV`, `EXAM`, etc.).
+     - Schema: `id`, `schoolId`, `name`, `code`, `description`, `isSystem`, `status` (`ACTIVE`/`INACTIVE`), `createdAt`, `updatedAt`.
+     - Constraints: Composite unique keys `@@unique([schoolId, code])` and `@@unique([schoolId, name])`.
+   - **`FeeStructure` Model:** Class/section master fee template.
+     - Schema: `id`, `schoolId`, `classId`, `sectionId` (nullable), `academicYear`, `name`, `status` (`ACTIVE`/`ARCHIVED`), `notes`, `createdAt`, `updatedAt`.
+     - Constraints: Composite unique key `@@unique([schoolId, classId, sectionId, academicYear, name])`.
+   - **`FeeStructureItem` Model:** Individual line items inside a fee structure.
+     - Schema: `id`, `schoolId`, `feeStructureId`, `feeCategoryId`, `amount` (`Decimal(10,2)`), `frequency` (`MONTHLY`, `QUARTERLY`, `ANNUAL`, `ONE_TIME`), `dueMonth` (1–12, nullable), `createdAt`, `updatedAt`.
+     - Constraints: `@@unique([feeStructureId, feeCategoryId])`.
+   - **`FeeDiscount` Model:** Fee concession policy.
+     - Schema: `id`, `schoolId`, `name`, `code`, `type` (`PERCENTAGE`/`FIXED_AMOUNT`), `value` (`Decimal(10,2)`), `isRteDefault` (boolean), `status` (`ACTIVE`/`INACTIVE`), `createdAt`, `updatedAt`.
+     - Constraints: Composite unique keys `@@unique([schoolId, code])` and `@@unique([schoolId, name])`.
+   - **`StudentFeeItem` Model:** Allocated fee obligation per student.
+     - Schema: `id`, `schoolId`, `studentId`, `enrollmentId`, `feeStructureItemId` (nullable), `feeCategoryId`, `academicYear`, `dueDate` (Date, nullable), `grossAmount` (`Decimal(10,2)`), `discountId` (nullable), `discountAmount` (`Decimal(10,2)`), `netAmount` (`Decimal(10,2)`), `remarks`, `status` (`ASSIGNED`/`WAIVED`/`CANCELLED`), `assignedById`, `createdAt`, `updatedAt`.
+     - Constraints: Composite unique key `@@unique([schoolId, studentId, academicYear, feeCategoryId, feeStructureItemId])`.
+
+#### 3. Validation Layer (`src/lib/validations/fee.ts`)
+- `createFeeCategorySchema` & `updateFeeCategorySchema`: Code uppercase normalization, trimmed name, description bounds.
+- `feeStructureItemInputSchema`: Positive fee amount (`amount > 0`), valid `frequency` enum, valid `dueMonth` (1–12).
+- `createFeeStructureSchema` & `updateFeeStructureSchema`: Standard academic year regex (`^\d{4}-\d{4}$`), non-empty items array, `.refine` checking duplicate `feeCategoryId` entries inside structure.
+- `createFeeDiscountSchema`: Uppercase code, type enum, non-negative value, percentage refinement ($\le 100$).
+- `allocateFeesSchema` & `getStudentFeeItemsQuerySchema`: `classId`, optional `sectionId`, academic year (`YYYY-YYYY`), structure/discount IDs.
+
+#### 4. Server Actions (`src/lib/actions/fees.ts`)
+- `createFeeCategory` & `updateFeeCategory`: ADMIN only, code/name uniqueness check per school, `diffChanges()`, audit logging (`FEE_CATEGORY_CREATED`, `FEE_CATEGORY_UPDATED`).
+- `deleteFeeCategory`: ADMIN only, safety check preventing deletion if referenced by `FeeStructureItem` or `StudentFeeItem`, audit log (`FEE_CATEGORY_DELETED`).
+- `getFeeCategories`: ADMIN / TEACHER read-only access.
+- `createFeeStructure` & `updateFeeStructure`: ADMIN only, class/section tenant verification, atomic creation/updates via `prisma.$transaction`. Preserves allocated student snapshots during structure updates. Audit logging (`FEE_STRUCTURE_CREATED`, `FEE_STRUCTURE_UPDATED`).
+- `archiveFeeStructure`: ADMIN only, status transition to `ARCHIVED`, audit log (`FEE_STRUCTURE_ARCHIVED`).
+- `createFeeDiscount`: ADMIN only, unique code/name validation, RTE default flag handling, audit log (`FEE_DISCOUNT_CREATED`).
+- `allocateFeesToCohort`: ADMIN only, active enrollment resolution, Decimal-safe arithmetic, automatic RTE candidate 100% waiver detection, duplicate allocation skipping, batch insertion via `createMany`, aggregate audit log (`FEE_ITEMS_ALLOCATED`).
+- `getStudentFeeItemsForClass`, `getFeeStructures`, `getFeeDiscounts`: Read queries for staff.
+
+#### 5. Finance UI Components (`src/app/(dashboard)/dashboard/fees/page.tsx` & `src/components/fees/`)
+- Role-gated server page `/dashboard/fees` for `ADMIN` (full mutation access) and `TEACHER` (read-only visibility); `STUDENT` and `PARENT` are server-gated away.
+- Top Tab Workspace:
+  1. `Allocation Workspace`: Cohort selection, structure & concession pickers, live student roster preview, pre-execution confirmation modal, execution feedback summary, and allocated student fee roster read view.
+  2. `Fee Structures`: Master structure cards, line items breakdown, Create Structure modal with dynamic line item builder, Edit Structure modal with master template notice, Archive confirmation.
+  3. `Fee Categories`: Category table, uppercase code badges, Create/Edit modals, safe deletion confirmation explaining reference constraints.
+  4. `Discounts & Concessions`: Concession table, percentage/fixed value display, RTE Default designation badge, Create Policy modal.
+
+#### 6. RBAC & Tenant Isolation
+- Session-derived `schoolId` enforced in every server action. Client-supplied school IDs are never trusted.
+- All mutations strictly restricted to `ADMIN`.
+- Read queries accessible by `ADMIN` and `TEACHER`.
+- Navigation item `Fees` (`/dashboard/fees`) exposed to `ADMIN` and `TEACHER` in `src/lib/nav.ts`.
+
+#### 7. Financial Snapshot & Decimal Security Rules
+- All monetary arithmetic uses `Prisma.Decimal` (zero floating-point math).
+- Arithmetic invariants enforced: $\text{grossAmount} \ge 0$, $\text{discountAmount} \ge 0$, $\text{discountAmount} \le \text{grossAmount}$, $\text{netAmount} = \text{grossAmount} - \text{discountAmount} \ge 0$.
+- `StudentFeeItem` stores immutable financial snapshots (`grossAmount`, `discountAmount`, `netAmount`, `dueDate`). Edits to master fee structures or discount policies never alter previously allocated student fee snapshots.
+
+#### 8. Cohort Allocation Workflow
+- Resolves students strictly through active `Enrollment` records for the specified `classId`, optional `sectionId`, and `academicYear`.
+- Automatically applies 100% waiver discount (`netAmount = 0.00`, status `WAIVED`) for `rteCandidate` students when a default RTE discount exists.
+- Skips already allocated combinations `(studentId, feeCategoryId, feeStructureItemId)` cleanly without unique constraint crashes.
+
+#### 9. Automated Verification
+- **Integration Test Suite (`scripts/test-fee-stage1.ts`)**: 56 / 56 test assertions passed in WSL2.
+- **Static Type Check**: `npx tsc --noEmit` $\rightarrow$ 0 TypeScript errors.
+- **Targeted ESLint**: 0 errors, 0 warnings across all Finance files.
+- **Database Cleanup**: Temporary test records created by test scripts were completely cleaned up after execution.
+
+#### 10. Manual Browser Verification
+1. ADMIN created 3 fee categories: Tuition Fee (`TUIT`), Development Fee (`DEV`), Examination Fee (`EXAM`).
+2. ADMIN created 1 master fee structure for Class 6 Section A (Academic Year 2025-2026): Tuition Fee ₹3,000, Development Fee ₹2,000, Examination Fee ₹500.
+3. ADMIN created 1 RTE 100% Waiver discount policy (`RTE100`, percentage 100, RTE default enabled).
+4. ADMIN executed cohort allocation for Class 6 Section A (2 enrolled students, 6 newly allocated `StudentFeeItem` records, total net payable ₹5,500; RTE student received 100% waiver with ₹0 net payable and `WAIVED` status).
+5. ADMIN re-executed cohort allocation for Class 6 Section A (0 newly allocated items, 6 skipped as already allocated; duplicate protection verified).
+6. ADMIN edited master fee structure (changed Tuition master amount to ₹5,000; previously allocated student Tuition snapshots remained ₹3,000; snapshot immutability verified).
+7. ADMIN attempted to delete Tuition Fee category (deletion correctly blocked by backend guard; UI explained reference in structures/items and recommended deactivation).
+8. TEACHER accessed `/dashboard/fees` (Finance page loaded successfully, existing fee data visible, mutation controls omitted).
+
+#### 11. Persistent Local Demo Finance Data Retained
+For ongoing demonstration and testing, the following local demo records were intentionally retained in the local database:
+- 3 Fee Categories (`TUIT`, `DEV`, `EXAM`)
+- 1 Fee Structure (`Class 6 Section A` 2025-2026)
+- 1 Fee Discount (`RTE100`)
+- 6 `StudentFeeItem` allocation records
+
+#### 12. Stage 1 / Stage 2 Scope Boundary
+- **Stage 1 Complete:** Fee Category Master, Master Fee Structures, Fee Structure Line Items, Fee Discount/Concession Policies, Cohort Fee Allocation, Student Fee Allocation Read View, RTE Default Waiver Engine, Duplicate Protection, Snapshot Immutability, Staff RBAC.
+- **Stage 2 Deferred:** Payment transactions, invoicing/demands, payment receipts / PDF generation, defaulter tracking, late fees, student/parent `/dashboard/my-fees` portal, financial CSV export/reconciliation, and online payment processing (Razorpay).
+
+- **Phase 3 — Stage 1 (Finance Management):** **COMPLETE & FULLY VERIFIED**
+- **Next Development Target:** **Phase 3 — Stage 2 (Billing, Invoices, Payments, Receipts & Fee Portal)**
 
 

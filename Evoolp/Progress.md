@@ -7,7 +7,7 @@
 
 ## 1. Current State Overview
 
-* **Current Phase:** Phase 2 — Academic Core
+* **Current Phase:** Phase 3 — Finance Management
 * **Active Branch:** `evoerp-foundation-fixes` (Tracking: `origin/evoerp-foundation-fixes`)
 * **Current HEAD Commit:** `0a494d3`
 * **Working Tree:** Clean (0 uncommitted changes, verified 2026-10-01)
@@ -35,6 +35,7 @@
 | **Phase 2** | Module 6 — Exams / Marks / Grades | Stage 2 | **COMPLETE** | Student/Parent scorecard at /dashboard/my-grades, multi-child switcher, student dossier integration, RFC-4180 CSV export, print layout, CBSE 8-tier analytics card, on-demand term aggregation |
 | **Phase 2** | Module 7 — Report Cards | Stage 1 | **COMPLETE** | Single-student report card compilation, cycle isolation by examIds, CBSE grades, attendance integration, RBAC, A4 print layout, verified & pushed |
 | **Phase 2** | Module 7 — Report Cards | Stage 2 | **COMPLETE** | Batch printing, cohort summary CSV export, persistent teacher remarks, co-scholastic grades, multi-term annual compilation, dedicated print root architecture |
+| **Phase 3** | Finance Management | Stage 1 | **COMPLETE** | Fee Categories, Master Fee Structures, Concessions & Cohort Allocation UI at `/dashboard/fees` |
 
 ---
 
@@ -308,16 +309,43 @@ The following features have been implemented and verified via TypeScript checks 
       * When WSL2 suspends or goes idle, `localhost:5432` can become temporarily unreachable during browser NextAuth callbacks (`PrismaClientInitializationError: Can't reach database server at localhost:5432`).
       * Diagnosed as a local WSL2 environment/networking lifecycle note, not an EvoERP application defect.
 
+15. **Finance Management — Fee Masters, Fee Structures, Concessions & Cohort Allocation (Phase 3 — Stage 1):**
+    * **Delivered Scope:**
+      * Fee Category Master (`FeeCategory` model, CRUD server actions, code uppercase normalization, unique code/name per school, safe deletion protection blocking deletion of referenced categories).
+      * Master Fee Structures (`FeeStructure` and `FeeStructureItem` models, multi-line item builder supporting amounts, frequencies `MONTHLY`/`QUARTERLY`/`ANNUAL`/`ONE_TIME`, due months, class/section targeting, and structure archiving).
+      * Fee Discount & Concession Policies (`FeeDiscount` model, `PERCENTAGE` and `FIXED_AMOUNT` types, percentage bounds $\le 100$, fixed amount $\ge 0$, and default RTE candidate 100% waiver designation).
+      * Cohort Fee Allocation Engine (`allocateFeesToCohort` server action, active enrollment resolution, Decimal-safe arithmetic, automatic RTE candidate waiver detection, master item duplicate allocation skipping, and aggregate `FEE_ITEMS_ALLOCATED` audit logging).
+      * Student Fee Allocation Read View (`getStudentFeeItemsForClass` server action, per-student gross, discount, net amounts, and status badges `ASSIGNED` / `WAIVED` / `CANCELLED`).
+      * Role-Based Access Model: `ADMIN` full mutation access; `TEACHER` clean read-only visibility at `/dashboard/fees`; `STUDENT` and `PARENT` strictly server-gated away from `/dashboard/fees`.
+      * Financial Snapshot & Decimal Security: Immutable `StudentFeeItem` financial amounts (`grossAmount`, `discountAmount`, `netAmount`) using `Prisma.Decimal` (zero floating-point math); updates to master fee structures or discount policies never retroactively mutate previously allocated student fee item snapshots.
+    * **Automated Verification:**
+      * Integration Test Suite (`scripts/test-fee-stage1.ts`): 56 / 56 test assertions passed in WSL2.
+      * `npx tsc --noEmit`: 0 TypeScript errors across codebase.
+      * Targeted ESLint: 0 errors, 0 warnings across all Finance validation, server action, and UI files.
+      * Database test cleanup: Temporary test records completely removed; baseline academic demo data remained 100% intact.
+    * **Actual Manual Browser Verification Performed:**
+      1. ADMIN successfully created 3 fee categories: Tuition Fee (`TUIT`), Development Fee (`DEV`), Examination Fee (`EXAM`).
+      2. ADMIN successfully created 1 master fee structure for Class 6 Section A (Academic Year 2025-2026): Tuition Fee ₹3,000, Development Fee ₹2,000, Examination Fee ₹500.
+      3. ADMIN successfully created 1 RTE 100% Waiver discount policy (`RTE100`, percentage 100, RTE default enabled).
+      4. ADMIN successfully executed first cohort allocation for Class 6 Section A (2 enrolled students, 6 newly allocated `StudentFeeItem` records, total net payable ₹5,500; RTE candidate student received 100% waiver with ₹0 net payable and `WAIVED` status).
+      5. ADMIN repeated the same cohort allocation for Class 6 Section A (0 newly allocated items, 6 skipped as already allocated; duplicate protection verified).
+      6. ADMIN edited the master fee structure (changed Tuition master amount to ₹5,000, structure total became ₹7,500; previously allocated student Tuition snapshots remained ₹3,000; snapshot immutability verified).
+      7. ADMIN attempted to delete the referenced Tuition Fee category (deletion correctly blocked by backend guard; UI explained reference in structures/items and recommended deactivation).
+      8. TEACHER manually accessed `/dashboard/fees` (Finance page loaded successfully, existing fee data visible, mutation controls omitted, Fee Categories readable).
+    * **Actual Navigation Behavior:**
+      * `/dashboard/fees` is exposed to `ADMIN` (full mutation access) and `TEACHER` (read-only visibility).
+      * `STUDENT` and `PARENT` are server-gated away from `/dashboard/fees`.
+      * `/dashboard/my-fees` is NOT exposed yet in Stage 1.
+
 ---
 
 ## 4. Current Incomplete Work (Future Scope)
 
-All Phase 2 Core Academic Modules (Modules 1 through 7, Stages 1 & 2) are fully implemented and verified.
-* Future schema evolution items (e.g. `rollNumber` support on `Student` model) reserved for upcoming phases.
+* **Phase 3 Stage 2 Deferred Scope:** Payment transactions, invoicing/demands, payment receipts / PDF generation, defaulter tracking, late fees, student/parent `/dashboard/my-fees` portal, financial CSV export/reconciliation, and online payment processing (Razorpay).
 
 ---
 
 ## 5. Next Development Target
 
-* **Target:** **Phase 3**
-* **Primary Scope:** Next major phase according to project roadmap.
+* **Target:** **Phase 3 — Finance Management (Stage 2)**
+* **Primary Scope:** Billing, Invoices, Payments, Receipts & Fee Portal

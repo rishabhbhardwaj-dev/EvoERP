@@ -79,6 +79,34 @@ enum GradeLabel {
   E
 }
 
+enum FeeCategoryStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum FeeStructureStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum FeeFrequency {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  ONE_TIME
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum FeeAllocationStatus {
+  ASSIGNED
+  WAIVED
+  CANCELLED
+}
+
 // ──────────────────────────── Models ───────────────────────────
 
 model School {
@@ -104,8 +132,13 @@ model School {
   attendanceRecords  AttendanceRecord[]
   exams              Exam[]
   examResults        ExamResult[]
-  reportCardRemarks  ReportCardRemark[]
+  reportCardRemarks   ReportCardRemark[]
   coScholasticEntries CoScholasticEntry[]
+  feeCategories       FeeCategory[]
+  feeStructures       FeeStructure[]
+  feeStructureItems   FeeStructureItem[]
+  feeDiscounts        FeeDiscount[]
+  studentFeeItems     StudentFeeItem[]
 
   @@index([status])
 }
@@ -132,6 +165,7 @@ model User {
   enteredResults           ExamResult[]        @relation("ResultEnteredBy")
   authoredRemarks          ReportCardRemark[]
   authoredCoScholastics    CoScholasticEntry[]
+  assignedFeeItems         StudentFeeItem[]    @relation("FeeAssigner")
 
   @@unique([schoolId, email])
   @@index([schoolId])
@@ -167,6 +201,7 @@ model Student {
   examResults       ExamResult[]
   reportCardRemarks   ReportCardRemark[]
   coScholasticEntries CoScholasticEntry[]
+  feeItems            StudentFeeItem[]
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -205,6 +240,7 @@ model Class {
   enrollments        Enrollment[]
   attendanceSessions AttendanceSession[]
   exams              Exam[]
+  feeStructures      FeeStructure[]
 
   @@unique([schoolId, name, academicYear])
   @@index([schoolId])
@@ -222,6 +258,7 @@ model Section {
   enrollments        Enrollment[]
   attendanceSessions AttendanceSession[]
   exams              Exam[]
+  feeStructures      FeeStructure[]
 
   @@unique([classId, name])
   @@index([schoolId])
@@ -254,10 +291,11 @@ model Enrollment {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  school  School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
-  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  school   School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student  Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class    Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section  Section          @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  feeItems StudentFeeItem[]
 
   @@unique([studentId, academicYear])
   @@index([schoolId])
@@ -441,6 +479,130 @@ model CoScholasticEntry {
 
   @@unique([schoolId, studentId, academicYear, term, activity])
   @@index([schoolId, academicYear, term])
+}
+
+// ───────────────────── Finance Management (Stage 1) ─────────────────────
+
+model FeeCategory {
+  id          String            @id @default(cuid())
+  schoolId    String
+  name        String
+  code        String
+  description String?
+  isSystem    Boolean           @default(false)
+  status      FeeCategoryStatus @default(ACTIVE)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  school            School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  feeStructureItems FeeStructureItem[]
+  studentFeeItems   StudentFeeItem[]
+
+  @@unique([schoolId, code])
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@index([schoolId, status])
+}
+
+model FeeStructure {
+  id           String             @id @default(cuid())
+  schoolId     String
+  classId      String
+  sectionId    String?
+  academicYear String
+  name         String
+  status       FeeStructureStatus @default(ACTIVE)
+  notes        String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  school  School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  class   Class              @relation(fields: [classId],  references: [id], onDelete: Cascade)
+  section Section?           @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  items   FeeStructureItem[]
+
+  @@unique([schoolId, classId, sectionId, academicYear, name])
+  @@index([schoolId])
+  @@index([schoolId, classId, academicYear])
+  @@index([schoolId, status])
+}
+
+model FeeStructureItem {
+  id             String       @id @default(cuid())
+  schoolId       String
+  feeStructureId String
+  feeCategoryId  String
+  amount         Decimal      @db.Decimal(10, 2)
+  frequency      FeeFrequency
+  dueMonth       Int?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  school          School           @relation(fields: [schoolId],       references: [id], onDelete: Cascade)
+  feeStructure    FeeStructure     @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+  feeCategory     FeeCategory      @relation(fields: [feeCategoryId],  references: [id], onDelete: Restrict)
+  studentFeeItems StudentFeeItem[]
+
+  @@unique([feeStructureId, feeCategoryId])
+  @@index([schoolId])
+  @@index([feeStructureId])
+  @@index([feeCategoryId])
+}
+
+model FeeDiscount {
+  id           String            @id @default(cuid())
+  schoolId     String
+  name         String
+  code         String
+  type         DiscountType
+  value        Decimal           @db.Decimal(10, 2)
+  isRteDefault Boolean           @default(false)
+  status       FeeCategoryStatus @default(ACTIVE)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  school          School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentFeeItems StudentFeeItem[]
+
+  @@unique([schoolId, code])
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@index([schoolId, status])
+}
+
+model StudentFeeItem {
+  id                 String              @id @default(cuid())
+  schoolId           String
+  studentId          String
+  enrollmentId       String
+  feeStructureItemId String?
+  feeCategoryId      String
+  academicYear       String
+  dueDate            DateTime?           @db.Date
+  grossAmount        Decimal             @db.Decimal(10, 2)
+  discountId         String?
+  discountAmount     Decimal             @db.Decimal(10, 2)
+  netAmount          Decimal             @db.Decimal(10, 2)
+  remarks            String?
+  status             FeeAllocationStatus @default(ASSIGNED)
+  assignedById       String
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  school           School            @relation(fields: [schoolId],           references: [id], onDelete: Cascade)
+  student          Student           @relation(fields: [studentId],          references: [id], onDelete: Cascade)
+  enrollment       Enrollment        @relation(fields: [enrollmentId],       references: [id], onDelete: Cascade)
+  feeStructureItem FeeStructureItem? @relation(fields: [feeStructureItemId], references: [id], onDelete: SetNull)
+  feeCategory      FeeCategory       @relation(fields: [feeCategoryId],      references: [id], onDelete: Restrict)
+  discount         FeeDiscount?      @relation(fields: [discountId],         references: [id], onDelete: SetNull)
+  assignedBy       User              @relation("FeeAssigner", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@unique([schoolId, studentId, academicYear, feeCategoryId, feeStructureItemId])
+  @@index([schoolId])
+  @@index([schoolId, studentId, academicYear])
+  @@index([schoolId, academicYear])
+  @@index([studentId, status])
+  @@index([enrollmentId])
 }
 
 // ─────────────────── NextAuth (Auth.js) adapter tables ───────────────────
