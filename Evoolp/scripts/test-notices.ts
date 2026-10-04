@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, NoticeAudience } from "@prisma/client";
 import { createNoticeSchema } from "../src/lib/validations/notice";
 
 const prisma = new PrismaClient();
@@ -80,7 +80,7 @@ async function runTests() {
     const v3 = createNoticeSchema.safeParse({
       title: "Valid Title Here",
       content: "Valid content string goes here.",
-      audience: "INVALID_AUDIENCE" as any,
+      audience: "INVALID_AUDIENCE" as unknown as NoticeAudience,
     });
     assert(!v3.success, "NOT-08", "Invalid audience enum correctly rejected");
 

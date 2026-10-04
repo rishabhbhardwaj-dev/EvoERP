@@ -162,8 +162,8 @@ async function runTests() {
           markedById: admin.id,
         },
       });
-    } catch (e: any) {
-      if (e.code === "P2002") {
+    } catch (e) {
+      if ((e as { code?: string })?.code === "P2002") {
         duplicatePrevented = true;
       }
     }

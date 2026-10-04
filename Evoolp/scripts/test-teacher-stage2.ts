@@ -1,4 +1,4 @@
-import { PrismaClient, Role, UserStatus } from "@prisma/client";
+import { PrismaClient, Prisma, Role, UserStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -178,8 +178,8 @@ async function runTests() {
         action: "TEACHER_UPDATED",
         entityType: "TEACHER",
         entityId: updatedT.id,
-        oldValues: diff.oldValues as any,
-        newValues: diff.newValues as any,
+        oldValues: diff.oldValues as Prisma.InputJsonObject,
+        newValues: diff.newValues as Prisma.InputJsonObject,
       },
     });
 
@@ -204,8 +204,8 @@ async function runTests() {
   });
   assert(
     !!updateAuditLog &&
-      (updateAuditLog.oldValues as any)?.department === "Arts & Craft" &&
-      (updateAuditLog.newValues as any)?.department === "Fine Arts",
+      (updateAuditLog.oldValues as { department?: string } | null)?.department === "Arts & Craft" &&
+      (updateAuditLog.newValues as { department?: string } | null)?.department === "Fine Arts",
     "TCH2-04B",
     "TEACHER_UPDATED audit log entry correctly recorded diffs without password exposure"
   );
@@ -248,8 +248,8 @@ async function runTests() {
   });
   assert(
     !!deactivationLog &&
-      (deactivationLog.newValues as any)?.status === "INACTIVE" &&
-      (deactivationLog.newValues as any)?.reason === deactivateReason,
+      (deactivationLog.newValues as { status?: string; reason?: string } | null)?.status === "INACTIVE" &&
+      (deactivationLog.newValues as { status?: string; reason?: string } | null)?.reason === deactivateReason,
     "TCH2-05B",
     "TEACHER_STATUS_CHANGED audit entry recorded with administrative reason"
   );
@@ -335,8 +335,8 @@ async function runTests() {
   });
   assert(
     !!deletionLog &&
-      (deletionLog.oldValues as any)?.employeeCode === "TCH-088" &&
-      (deletionLog.oldValues as any)?.name === "Meera S. Sharma",
+      (deletionLog.oldValues as { employeeCode?: string; name?: string } | null)?.employeeCode === "TCH-088" &&
+      (deletionLog.oldValues as { employeeCode?: string; name?: string } | null)?.name === "Meera S. Sharma",
     "TCH2-07B",
     "Historical TEACHER_DELETED audit log preserved with complete staff snapshot"
   );

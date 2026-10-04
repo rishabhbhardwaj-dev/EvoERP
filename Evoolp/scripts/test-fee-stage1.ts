@@ -212,8 +212,8 @@ async function runTests() {
           code: "TEST_TUIT",
         },
       });
-    } catch (e: any) {
-      dupCodePrevented = e.code === "P2002";
+    } catch (e) {
+      dupCodePrevented = (e as { code?: string })?.code === "P2002";
     }
     assert(
       dupCodePrevented,
@@ -231,8 +231,8 @@ async function runTests() {
           code: "TEST_DIFF",
         },
       });
-    } catch (e: any) {
-      dupNamePrevented = e.code === "P2002";
+    } catch (e) {
+      dupNamePrevented = (e as { code?: string })?.code === "P2002";
     }
     assert(
       dupNamePrevented,
@@ -335,8 +335,8 @@ async function runTests() {
           name: "Test Fee Structure 2025",
         },
       });
-    } catch (e: any) {
-      dupStructPrevented = e.code === "P2002";
+    } catch (e) {
+      dupStructPrevented = (e as { code?: string })?.code === "P2002";
     }
     assert(
       dupStructPrevented,
@@ -420,7 +420,7 @@ async function runTests() {
     )!;
 
     let totalAllocated = 0;
-    let totalSkipped = 0;
+    const totalSkipped = 0;
 
     for (const enrollment of activeEnrollments) {
       const student = enrollment.student;

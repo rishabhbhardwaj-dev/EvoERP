@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { updateSubjectSchema, deleteSubjectSchema } from "../src/lib/validations/subject";
 import { diffChanges } from "../src/lib/audit";
 
@@ -117,7 +117,8 @@ async function runTests() {
   const { oldValues, newValues } = diffChanges(oldVals, newVals);
 
   assert(
-    (newValues as any).code === "TEST-SUB-MOD" && (oldValues as any).code === "TEST-SUB-A",
+    (newValues as { code?: string }).code === "TEST-SUB-MOD" &&
+      (oldValues as { code?: string }).code === "TEST-SUB-A",
     "SUB2-09",
     "diffChanges() correctly captures granular field diffs for subject update"
   );
@@ -129,8 +130,8 @@ async function runTests() {
       action: "SUBJECT_UPDATED",
       entityType: "SUBJECT",
       entityId: testSubA.id,
-      oldValues: oldValues as any,
-      newValues: newValues as any,
+      oldValues: oldValues as Prisma.InputJsonObject,
+      newValues: newValues as Prisma.InputJsonObject,
     },
   });
   assert(!!updateAuditLog, "SUB2-10", "SUBJECT_UPDATED audit entry persisted successfully");
@@ -194,7 +195,7 @@ async function runTests() {
     },
   });
   assert(
-    (deleteAuditLog.oldValues as any)?.code === "TEST-DELETE-ME",
+    (deleteAuditLog.oldValues as { code?: string } | null)?.code === "TEST-DELETE-ME",
     "SUB2-14",
     "SUBJECT_DELETED pre-deletion snapshot successfully logged in AuditLog"
   );

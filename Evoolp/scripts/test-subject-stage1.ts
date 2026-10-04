@@ -140,7 +140,7 @@ async function runTests() {
   });
   assert(!!auditEntry, "SUB1-09", "SUBJECT_CREATED audit log correctly logged in database");
   assert(
-    (auditEntry?.newValues as any)?.code === "ENG-101",
+    (auditEntry?.newValues as { code?: string } | null)?.code === "ENG-101",
     "SUB1-09B",
     "Audit log newValues matches created subject code"
   );
@@ -155,8 +155,10 @@ async function runTests() {
         code: "ENG-101",
       },
     });
-  } catch (err: any) {
-    duplicateRejected = err.code === "P2002" || String(err).includes("Unique constraint");
+  } catch (err) {
+    duplicateRejected =
+      (err as { code?: string })?.code === "P2002" ||
+      String(err).includes("Unique constraint");
   }
   assert(duplicateRejected, "SUB1-10", "Duplicate subject code 'ENG-101' rejected by composite constraint schoolId_code");
 
